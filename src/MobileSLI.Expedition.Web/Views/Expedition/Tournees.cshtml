@@ -1,0 +1,41 @@
+@model TourneesIndexViewModel
+@{
+    ViewData["Title"] = "Tournées préparables";
+}
+
+<section class="page-header">
+    <div>
+        <p class="eyebrow">Date calculée par l'API centrale</p>
+        <h1>Tournées du @Model.DateTournee.ToString("dd/MM/yyyy")</h1>
+        <p class="lead">Fuseau métier : @Model.FuseauHoraireMetier. La sélection de tournée reste côté application web.</p>
+    </div>
+    <a class="button button-secondary" asp-action="Index">Retour accueil</a>
+</section>
+
+@if (Model.Tournees.Count == 0)
+{
+    <section class="card">
+        <p>Aucune tournée disponible pour cette date.</p>
+    </section>
+}
+else
+{
+    <section class="tournee-list">
+        @foreach (var tournee in Model.Tournees)
+        {
+            <article class="card tournee-card">
+                <div>
+                    <span class="badge @(tournee.IsLocked ? "badge-locked" : "")">@tournee.EtatPreparation</span>
+                    <h2>@tournee.CodeTournee - @tournee.LibelleTournee</h2>
+                    <p>@tournee.NombreLignes ligne(s) de tournée chargée(s).</p>
+                </div>
+                <div class="actions">
+                    <a class="button button-primary" asp-action="Preparer" asp-route-codeTournee="@tournee.CodeTournee">
+                        @(tournee.IsLocked ? "Consulter" : "Préparer")
+                    </a>
+                    <a class="button button-secondary" asp-action="Recapitulatif" asp-route-codeTournee="@tournee.CodeTournee">Récapitulatif</a>
+                </div>
+            </article>
+        }
+    </section>
+}

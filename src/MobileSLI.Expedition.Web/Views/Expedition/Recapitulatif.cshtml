@@ -1,0 +1,61 @@
+@model PreparationTourneeViewModel
+@{
+    ViewData["Title"] = "Récapitulatif";
+}
+
+<section class="page-header">
+    <div>
+        <p class="eyebrow">Récapitulatif avant verrouillage automatique</p>
+        <h1>@Model.CodeTournee - @Model.LibelleTournee</h1>
+        <p class="lead">
+            Date tournée : @Model.DateTournee.ToString("dd/MM/yyyy") - état :
+            <span class="badge @(Model.IsReadOnly ? "badge-locked" : "")">@Model.EtatPreparation</span>
+        </p>
+    </div>
+    <div class="actions">
+        <a class="button button-secondary" asp-action="Preparer" asp-route-codeTournee="@Model.CodeTournee">Retour préparation</a>
+        <a class="button button-secondary" asp-action="Tournees">Liste des tournées</a>
+    </div>
+</section>
+
+<section class="card">
+    <h2>Valeurs qui seront transmises au verrouillage</h2>
+    <p class="muted">
+        Le mobile ne lit pas ce brouillon. Les données seront disponibles pour le mobile uniquement après sauvegarde et verrouillage en BD par l'API centrale.
+    </p>
+
+    <div class="table-wrapper">
+        <table>
+            <thead>
+                <tr>
+                    <th>Ordre</th>
+                    <th>Client</th>
+                    <th>PDL</th>
+                    @foreach (var article in Model.Articles)
+                    {
+                        <th>@article.LibelleArticle</th>
+                    }
+                    <th>Commentaire exceptionnel</th>
+                    <th>Instructions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var ligne in Model.Lignes)
+                {
+                    <tr>
+                        <td>@ligne.OrdreArret</td>
+                        <td>@ligne.NomClient</td>
+                        <td>@ligne.CodePDL</td>
+                        @foreach (var article in Model.Articles)
+                        {
+                            var value = ligne.Quantites.TryGetValue(article.CodeArticle, out var quantite) ? quantite : null;
+                            <td>@(value.HasValue ? value.Value.ToString() : "Non renseigné")</td>
+                        }
+                        <td>@(string.IsNullOrWhiteSpace(ligne.CommentaireExceptionnel) ? "" : ligne.CommentaireExceptionnel)</td>
+                        <td>@(string.IsNullOrWhiteSpace(ligne.Instructions) ? "" : ligne.Instructions)</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</section>

@@ -1,0 +1,113 @@
+@model PreparationTourneeViewModel
+@{
+    ViewData["Title"] = "Préparer une tournée";
+}
+
+<section class="page-header">
+    <div>
+        <p class="eyebrow">Préparation côté web</p>
+        <h1>@Model.CodeTournee - @Model.LibelleTournee</h1>
+        <p class="lead">
+            Date tournée : @Model.DateTournee.ToString("dd/MM/yyyy") - état :
+            <span class="badge @(Model.IsReadOnly ? "badge-locked" : "")">@Model.EtatPreparation</span>
+        </p>
+    </div>
+    <div class="actions">
+        <a class="button button-secondary" asp-action="Tournees">Liste des tournées</a>
+        <a class="button button-secondary" asp-action="Recapitulatif" asp-route-codeTournee="@Model.CodeTournee">Récapitulatif</a>
+    </div>
+</section>
+
+@if (!ViewData.ModelState.IsValid)
+{
+    <section class="alert alert-error">
+        <strong>Correction nécessaire</strong>
+        <div asp-validation-summary="All"></div>
+    </section>
+}
+
+@if (Model.IsReadOnly)
+{
+    <div class="alert alert-info">Cette tournée est verrouillée en BD. La consultation reste possible, mais les champs sont en lecture seule.</div>
+}
+
+<form asp-action="Preparer" asp-route-codeTournee="@Model.CodeTournee" method="post">
+    @Html.AntiForgeryToken()
+
+    <section class="line-list">
+        @for (var i = 0; i < Model.Lignes.Count; i++)
+        {
+            var ligne = Model.Lignes[i];
+            <article class="card line-card">
+                <input type="hidden" name="Lignes[@i].IdLigneSource" value="@ligne.IdLigneSource" />
+
+                <div class="line-header">
+                    <div>
+                        <span class="badge">Arrêt @ligne.OrdreArret</span>
+                        <h2>@ligne.NomClient</h2>
+                        <p class="muted">Client @ligne.NumClient - PDL @ligne.CodePDL - @ligne.DescriptionPDL</p>
+                        <p class="muted">@ligne.Adresse</p>
+                    </div>
+                    @if (ligne.FermetureClient)
+                    {
+                        <span class="badge badge-warning">Fermeture signalée</span>
+                    }
+                </div>
+
+                <div class="info-grid">
+                    <div>
+                        <h3>Instructions</h3>
+                        <p>@(string.IsNullOrWhiteSpace(ligne.Instructions) ? "Aucune instruction." : ligne.Instructions)</p>
+                    </div>
+                    <div>
+                        <h3>Zone de déchargement</h3>
+                        <p>@(string.IsNullOrWhiteSpace(ligne.ZoneDechargement) ? "Non renseignée" : ligne.ZoneDechargement)</p>
+                    </div>
+                    <div>
+                        <h3>Dernière modification</h3>
+                        <p>@(ligne.DerniereModificationUtc.HasValue ? ligne.DerniereModificationUtc.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm") : "Non modifiée")</p>
+                    </div>
+                </div>
+
+                <div class="quantity-grid" style="--columns:@Model.Articles.Count">
+                    @for (var j = 0; j < Model.Articles.Count; j++)
+                    {
+                        var article = Model.Articles[j];
+                        var value = ligne.Quantites.TryGetValue(article.CodeArticle, out var quantite) ? quantite : null;
+                        <label class="field">
+                            <span>@article.LibelleArticle</span>
+                            <input type="hidden" name="Lignes[@i].Quantites[@j].CodeArticle" value="@article.CodeArticle" />
+                            <input
+                                type="number"
+                                min="0"
+                                step="1"
+                                name="Lignes[@i].Quantites[@j].QuantiteLivreePrevue"
+                                value="@(value.HasValue ? value.Value.ToString() : string.Empty)"
+                                placeholder="Non renseigné"
+                                @(Model.IsReadOnly ? "readonly" : string.Empty) />
+                        </label>
+                    }
+                </div>
+
+                <label class="field full">
+                    <span>Commentaire exceptionnel</span>
+                    <textarea name="Lignes[@i].CommentaireExceptionnel" rows="2" placeholder="Information ponctuelle à transmettre au livreur" @(Model.IsReadOnly ? "readonly" : string.Empty)>@ligne.CommentaireExceptionnel</textarea>
+                </label>
+
+                <details class="technical-details">
+                    <summary>Détail technique</summary>
+                    <code>@ligne.IdLigneSource</code>
+                </details>
+            </article>
+        }
+    </section>
+
+    @if (!Model.IsReadOnly)
+    {
+        <section class="sticky-actions">
+            <button class="button button-secondary" type="submit" name="ActionType" value="save">Enregistrer brouillon</button>
+            <button class="button button-secondary" type="submit" name="ActionType" value="recap">Enregistrer et voir le récapitulatif</button>
+            <button class="button button-primary" type="submit" name="ActionType" value="ready">Marquer prête pour verrouillage</button>
+        </section>
+    }
+</form>
