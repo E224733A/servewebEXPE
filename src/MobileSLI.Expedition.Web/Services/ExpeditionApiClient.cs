@@ -1,3 +1,4 @@
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.Extensions.Options;
@@ -17,8 +18,22 @@ public sealed class ExpeditionApiClient : IExpeditionApiClient
         _logger = logger;
 
         var apiOptions = options.Value;
+        if (string.IsNullOrWhiteSpace(apiOptions.BaseUrl))
+        {
+            throw new InvalidOperationException("ExpeditionApi:BaseUrl doit pointer vers l'API centrale réelle.");
+        }
+
         _httpClient.BaseAddress = new Uri(apiOptions.BaseUrl, UriKind.Absolute);
         _httpClient.Timeout = TimeSpan.FromSeconds(apiOptions.TimeoutSeconds <= 0 ? 30 : apiOptions.TimeoutSeconds);
+        _httpClient.DefaultRequestHeaders.Accept.Clear();
+        _httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("MobileSLI.Expedition.Web/1.0");
+
+        if (!string.IsNullOrWhiteSpace(apiOptions.ApiKey) && !string.IsNullOrWhiteSpace(apiOptions.ApiKeyHeaderName))
+        {
+            _httpClient.DefaultRequestHeaders.Remove(apiOptions.ApiKeyHeaderName);
+            _httpClient.DefaultRequestHeaders.Add(apiOptions.ApiKeyHeaderName, apiOptions.ApiKey);
+        }
     }
 
     public async Task<ExpeditionLoadResponse> GetPreparationsAsync(CancellationToken cancellationToken)
@@ -37,7 +52,7 @@ public sealed class ExpeditionApiClient : IExpeditionApiClient
             throw new ExpeditionApiException("La réponse de chargement Expédition est vide ou invalide.", (int)response.StatusCode, content);
         }
 
-        _logger.LogInformation("Chargement Expédition reçu : {TourneesCount} tournée(s), date {DateTournee}", result.Tournees.Count, result.DateTournee);
+        _logger.LogInformation("Chargement Expédition réel reçu : {TourneesCount} tournée(s), date {DateTournee}", result.Tournees.Count, result.DateTournee);
         return result;
     }
 
@@ -63,7 +78,7 @@ public sealed class ExpeditionApiClient : IExpeditionApiClient
             throw new ExpeditionApiException(result.Message ?? "Le verrouillage Expédition a été refusé par l'API.", (int)response.StatusCode, content, result.Statut);
         }
 
-        _logger.LogInformation("Réponse verrouillage Expédition : {Statut} lot {IdLot}", result.Statut, result.IdLotVerrouillage);
+        _logger.LogInformation("Réponse verrouillage Expédition réel : {Statut} lot {IdLot}", result.Statut, result.IdLotVerrouillage);
         return result;
     }
 }
