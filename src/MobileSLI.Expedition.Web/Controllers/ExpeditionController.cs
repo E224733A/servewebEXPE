@@ -61,6 +61,26 @@ public sealed class ExpeditionController : Controller
         }
     }
 
+    [HttpPost("/expedition/test-api")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> TesterApi(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var response = await _apiClient.GetPreparationsAsync(cancellationToken);
+            TempData["Success"] = string.Equals(response.Statut, "SUCCESS", StringComparison.OrdinalIgnoreCase)
+                ? $"Mode test API : API joignable. {response.Tournees.Count} tournée(s) reçue(s) pour le {response.DateTournee:dd/MM/yyyy}. Aucune donnée n'a été enregistrée par ce test."
+                : $"Mode test API : réponse reçue, statut {response.Statut}. Aucune donnée n'a été enregistrée par ce test.";
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erreur pendant le test API Expédition.");
+            TempData["Error"] = "Mode test API : impossible de joindre ou de lire l'API centrale.";
+        }
+
+        return RedirectToAction(nameof(Index));
+    }
+
     [HttpGet("/expedition/tournees")]
     public async Task<IActionResult> Tournees(CancellationToken cancellationToken)
     {
@@ -129,6 +149,18 @@ public sealed class ExpeditionController : Controller
             return RedirectToAction(nameof(Preparer), new { codeTournee });
         }
 
+        if (!ModelState.IsValid)
+        {
+            var invalidModel = await BuildPreparationViewModelAsync(codeTournee, cancellationToken);
+            if (invalidModel is null)
+            {
+                return RedirectToAction(nameof(Tournees));
+            }
+
+            ReapplyInputValues(invalidModel, input);
+            return View(invalidModel);
+        }
+
         var errors = ValidatePreparationInput(input, tournee, load.ArticlesSuivis);
         if (errors.Count > 0)
         {
@@ -138,6 +170,12 @@ public sealed class ExpeditionController : Controller
             }
 
             var invalidModel = await BuildPreparationViewModelAsync(codeTournee, cancellationToken);
+            if (invalidModel is null)
+            {
+                return RedirectToAction(nameof(Tournees));
+            }
+
+            ReapplyInputValues(invalidModel, input);
             return View(invalidModel);
         }
 
@@ -168,6 +206,27 @@ public sealed class ExpeditionController : Controller
             TempData["Error"] = ex.Message;
             return RedirectToAction(nameof(Preparer), new { codeTournee });
         }
+    }
+
+    [HttpGet("/expedition/tournees/{codeTournee}/lignes/detail")]
+    public async Task<IActionResult> DetailLigne(string codeTournee, string idLigneSource, CancellationToken cancellationToken)
+    {
+        var model = await BuildPreparationViewModelAsync(codeTournee, cancellationToken);
+        if (model is null)
+        {
+            TempData["Error"] = "La tournée demandée n'existe pas dans les données chargées.";
+            return RedirectToAction(nameof(Tournees));
+        }
+
+        var ligne = model.Lignes.FirstOrDefault(l => string.Equals(l.IdLigneSource, idLigneSource, StringComparison.OrdinalIgnoreCase));
+        if (ligne is null)
+        {
+            TempData["Error"] = "La ligne demandée n'existe pas dans la tournée chargée.";
+            return RedirectToAction(nameof(Preparer), new { codeTournee });
+        }
+
+        ViewData["SelectedLineId"] = ligne.IdLigneSource;
+        return View(model);
     }
 
     [HttpGet("/expedition/tournees/{codeTournee}/recapitulatif")]
@@ -240,6 +299,29 @@ public sealed class ExpeditionController : Controller
         }
 
         return model;
+    }
+
+    private static void ReapplyInputValues(PreparationTourneeViewModel model, PreparationInputModel input)
+    {
+        var inputByLine = input.Lignes.ToDictionary(l => l.IdLigneSource, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var ligne in model.Lignes)
+        {
+            if (!inputByLine.TryGetValue(ligne.IdLigneSource, out var inputLine))
+            {
+                continue;
+            }
+
+            ligne.CommentaireExceptionnel = inputLine.CommentaireExceptionnel;
+
+            foreach (var quantite in inputLine.Quantites)
+            {
+                if (!string.IsNullOrWhiteSpace(quantite.CodeArticle))
+                {
+                    ligne.Quantites[quantite.CodeArticle] = quantite.QuantiteLivreePrevue;
+                }
+            }
+        }
     }
 
     private static List<string> ValidatePreparationInput(PreparationInputModel input, TourneePreparationDto tournee, List<ArticleSuiviDto> articles)

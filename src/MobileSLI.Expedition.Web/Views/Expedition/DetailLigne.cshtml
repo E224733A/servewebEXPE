@@ -1,0 +1,94 @@
+@model PreparationTourneeViewModel
+@{
+    ViewData["Title"] = "Détail ligne";
+    var selectedLineId = ViewData["SelectedLineId"] as string;
+    var ligne = Model.Lignes.First(l => string.Equals(l.IdLigneSource, selectedLineId, StringComparison.OrdinalIgnoreCase));
+}
+
+<section class="screen-header">
+    <div>
+        <p class="eyebrow">Détail ligne</p>
+        <h1>@ligne.NomClient</h1>
+        <p class="lead">Tournée @Model.CodeTournee · arrêt @ligne.OrdreArret · PDL @ligne.CodePDL</p>
+    </div>
+    <div class="actions">
+        <a class="button button-secondary" asp-action="Preparer" asp-route-codeTournee="@Model.CodeTournee">Retour préparation</a>
+        <a class="button button-secondary" asp-action="Recapitulatif" asp-route-codeTournee="@Model.CodeTournee">Récapitulatif</a>
+    </div>
+</section>
+
+<section class="detail-layout">
+    <article class="panel detail-main-card">
+        <div class="section-header compact">
+            <h2>Informations client</h2>
+            <span class="badge @CssStatus.ClassFor(Model.EtatPreparation)">@Model.EtatPreparation</span>
+        </div>
+
+        <div class="detail-grid">
+            <div class="detail-field">
+                <span>Client</span>
+                <strong>@ligne.NomClient</strong>
+                <small>@ligne.NumClient</small>
+            </div>
+            <div class="detail-field">
+                <span>Point de livraison</span>
+                <strong>@ligne.CodePDL</strong>
+                <small>@ligne.DescriptionPDL</small>
+            </div>
+            <div class="detail-field full-row">
+                <span>Adresse</span>
+                <strong>@ligne.Adresse</strong>
+            </div>
+            <div class="detail-field full-row">
+                <span>Instructions existantes</span>
+                <strong>@(string.IsNullOrWhiteSpace(ligne.Instructions) ? "Aucune instruction." : ligne.Instructions)</strong>
+            </div>
+            <div class="detail-field full-row">
+                <span>Commentaire exceptionnel</span>
+                <strong>@(string.IsNullOrWhiteSpace(ligne.CommentaireExceptionnel) ? "Non renseigné" : ligne.CommentaireExceptionnel)</strong>
+            </div>
+            <div class="detail-field">
+                <span>Zone de déchargement</span>
+                <strong>@(string.IsNullOrWhiteSpace(ligne.ZoneDechargement) ? "Non renseignée" : ligne.ZoneDechargement)</strong>
+            </div>
+            <div class="detail-field">
+                <span>Dernière modification</span>
+                <strong>@(ligne.DerniereModificationUtc.HasValue ? ligne.DerniereModificationUtc.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm") : "Non modifiée")</strong>
+            </div>
+        </div>
+
+        <details class="technical-details">
+            <summary>Identifiant technique</summary>
+            <code>@ligne.IdLigneSource</code>
+        </details>
+    </article>
+
+    <aside class="panel detail-side-card">
+        <p class="eyebrow">Quantités livrées prévues</p>
+        <div class="quantity-summary-list">
+            @foreach (var article in Model.Articles)
+            {
+                var value = ligne.Quantites.TryGetValue(article.CodeArticle, out var quantite) ? quantite : null;
+                <div class="quantity-summary-item">
+                    <span>@article.LibelleArticle</span>
+                    <strong>@(value.HasValue ? value.Value.ToString() : "—")</strong>
+                </div>
+            }
+        </div>
+
+        @if (ligne.FermetureClient)
+        {
+            <div class="status-strip status-strip-warning">
+                <strong>Fermeture signalée</strong>
+                <span>Vérifier la cohérence avant le verrouillage automatique.</span>
+            </div>
+        }
+        else
+        {
+            <div class="status-strip status-strip-info">
+                <strong>Ligne consultable</strong>
+                <span>Les modifications se font depuis le tableau de préparation.</span>
+            </div>
+        }
+    </aside>
+</section>

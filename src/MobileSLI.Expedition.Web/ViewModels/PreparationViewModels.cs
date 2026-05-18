@@ -17,6 +17,16 @@ public sealed class PreparationTourneeViewModel
     public List<ArticleSuiviDto> Articles { get; set; } = [];
 
     public List<PreparationLigneViewModel> Lignes { get; set; } = [];
+
+    public int NombreLignes => Lignes.Count;
+
+    public int NombreCommentaires => Lignes.Count(l => !string.IsNullOrWhiteSpace(l.CommentaireExceptionnel));
+
+    public int NombreLignesModifiees => Lignes.Count(l => l.EstModifiee);
+
+    public int NombreFermeturesSignalees => Lignes.Count(l => l.FermetureClient);
+
+    public int NombreQuantitesRenseignees => Lignes.Sum(l => l.Quantites.Count(q => q.Value.HasValue));
 }
 
 public sealed class PreparationLigneViewModel
@@ -46,6 +56,8 @@ public sealed class PreparationLigneViewModel
     public DateTimeOffset? DerniereModificationUtc { get; set; }
 
     public Dictionary<string, int?> Quantites { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    public bool EstModifiee => DerniereModificationUtc.HasValue || !string.IsNullOrWhiteSpace(CommentaireExceptionnel) || Quantites.Any(q => q.Value.HasValue);
 }
 
 public sealed class PreparationInputModel

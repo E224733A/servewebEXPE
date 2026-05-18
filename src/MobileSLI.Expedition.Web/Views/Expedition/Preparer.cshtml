@@ -3,19 +3,38 @@
     ViewData["Title"] = "Préparer une tournée";
 }
 
-<section class="page-header">
+<section class="screen-header">
     <div>
         <p class="eyebrow">Préparation côté web</p>
         <h1>@Model.CodeTournee - @Model.LibelleTournee</h1>
         <p class="lead">
-            Date tournée : @Model.DateTournee.ToString("dd/MM/yyyy") - état :
-            <span class="badge @(Model.IsReadOnly ? "badge-locked" : "")">@Model.EtatPreparation</span>
+            Date tournée : @Model.DateTournee.ToString("dd/MM/yyyy") · état :
+            <span class="badge @CssStatus.ClassFor(Model.EtatPreparation)">@Model.EtatPreparation</span>
         </p>
     </div>
     <div class="actions">
         <a class="button button-secondary" asp-action="Tournees">Liste des tournées</a>
         <a class="button button-secondary" asp-action="Recapitulatif" asp-route-codeTournee="@Model.CodeTournee">Récapitulatif</a>
     </div>
+</section>
+
+<section class="metrics-row">
+    <article class="metric-card">
+        <span>Lignes</span>
+        <strong>@Model.NombreLignes</strong>
+    </article>
+    <article class="metric-card">
+        <span>Modifiées</span>
+        <strong>@Model.NombreLignesModifiees</strong>
+    </article>
+    <article class="metric-card">
+        <span>Commentaires</span>
+        <strong>@Model.NombreCommentaires</strong>
+    </article>
+    <article class="metric-card">
+        <span>Fermetures</span>
+        <strong>@Model.NombreFermeturesSignalees</strong>
+    </article>
 </section>
 
 @if (!ViewData.ModelState.IsValid)
@@ -34,80 +53,91 @@
 <form asp-action="Preparer" asp-route-codeTournee="@Model.CodeTournee" method="post">
     @Html.AntiForgeryToken()
 
-    <section class="line-list">
-        @for (var i = 0; i < Model.Lignes.Count; i++)
-        {
-            var ligne = Model.Lignes[i];
-            <article class="card line-card">
-                <input type="hidden" name="Lignes[@i].IdLigneSource" value="@ligne.IdLigneSource" />
+    <section class="panel panel-table">
+        <div class="section-header compact">
+            <h2>Lignes de tournée</h2>
+            <span class="badge badge-soft">Saisie locale · pas de POST API central</span>
+        </div>
 
-                <div class="line-header">
-                    <div>
-                        <span class="badge">Arrêt @ligne.OrdreArret</span>
-                        <h2>@ligne.NomClient</h2>
-                        <p class="muted">Client @ligne.NumClient - PDL @ligne.CodePDL - @ligne.DescriptionPDL</p>
-                        <p class="muted">@ligne.Adresse</p>
-                    </div>
-                    @if (ligne.FermetureClient)
+        <div class="table-wrapper">
+            <table class="data-table preparation-table">
+                <thead>
+                    <tr>
+                        <th>Client / PDL</th>
+                        <th>Adresse</th>
+                        @foreach (var article in Model.Articles)
+                        {
+                            <th class="quantity-heading">@article.LibelleArticle</th>
+                        }
+                        <th>Commentaire exceptionnel</th>
+                        <th>État</th>
+                        <th>Détail</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @for (var i = 0; i < Model.Lignes.Count; i++)
                     {
-                        <span class="badge badge-warning">Fermeture signalée</span>
+                        var ligne = Model.Lignes[i];
+                        <tr class="@(ligne.EstModifiee ? "row-modified" : string.Empty)">
+                            <td class="client-cell">
+                                <input type="hidden" name="Lignes[@i].IdLigneSource" value="@ligne.IdLigneSource" />
+                                <strong>@ligne.NomClient</strong>
+                                <span>Client @ligne.NumClient · PDL @ligne.CodePDL</span>
+                                <small>Arrêt @ligne.OrdreArret · @ligne.DescriptionPDL</small>
+                            </td>
+                            <td class="address-cell">@ligne.Adresse</td>
+                            @for (var j = 0; j < Model.Articles.Count; j++)
+                            {
+                                var article = Model.Articles[j];
+                                var value = ligne.Quantites.TryGetValue(article.CodeArticle, out var quantite) ? quantite : null;
+                                <td class="quantity-cell">
+                                    <input type="hidden" name="Lignes[@i].Quantites[@j].CodeArticle" value="@article.CodeArticle" />
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        step="1"
+                                        name="Lignes[@i].Quantites[@j].QuantiteLivreePrevue"
+                                        value="@(value.HasValue ? value.Value.ToString() : string.Empty)"
+                                        placeholder="—"
+                                        @(Model.IsReadOnly ? "readonly" : string.Empty) />
+                                </td>
+                            }
+                            <td class="comment-cell">
+                                <textarea name="Lignes[@i].CommentaireExceptionnel" rows="1" placeholder="Commentaire" @(Model.IsReadOnly ? "readonly" : string.Empty)>@ligne.CommentaireExceptionnel</textarea>
+                            </td>
+                            <td>
+                                @if (ligne.FermetureClient)
+                                {
+                                    <span class="badge badge-warning">Fermeture</span>
+                                }
+                                else if (ligne.EstModifiee)
+                                {
+                                    <span class="badge badge-info">Modifiée</span>
+                                }
+                                else
+                                {
+                                    <span class="badge badge-neutral">Non préparée</span>
+                                }
+                            </td>
+                            <td>
+                                <a class="button button-secondary button-small"
+                                   asp-action="DetailLigne"
+                                   asp-route-codeTournee="@Model.CodeTournee"
+                                   asp-route-idLigneSource="@ligne.IdLigneSource">Ouvrir</a>
+                            </td>
+                        </tr>
                     }
-                </div>
-
-                <div class="info-grid">
-                    <div>
-                        <h3>Instructions</h3>
-                        <p>@(string.IsNullOrWhiteSpace(ligne.Instructions) ? "Aucune instruction." : ligne.Instructions)</p>
-                    </div>
-                    <div>
-                        <h3>Zone de déchargement</h3>
-                        <p>@(string.IsNullOrWhiteSpace(ligne.ZoneDechargement) ? "Non renseignée" : ligne.ZoneDechargement)</p>
-                    </div>
-                    <div>
-                        <h3>Dernière modification</h3>
-                        <p>@(ligne.DerniereModificationUtc.HasValue ? ligne.DerniereModificationUtc.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm") : "Non modifiée")</p>
-                    </div>
-                </div>
-
-                <div class="quantity-grid" style="--columns:@Model.Articles.Count">
-                    @for (var j = 0; j < Model.Articles.Count; j++)
-                    {
-                        var article = Model.Articles[j];
-                        var value = ligne.Quantites.TryGetValue(article.CodeArticle, out var quantite) ? quantite : null;
-                        <label class="field">
-                            <span>@article.LibelleArticle</span>
-                            <input type="hidden" name="Lignes[@i].Quantites[@j].CodeArticle" value="@article.CodeArticle" />
-                            <input
-                                type="number"
-                                min="0"
-                                step="1"
-                                name="Lignes[@i].Quantites[@j].QuantiteLivreePrevue"
-                                value="@(value.HasValue ? value.Value.ToString() : string.Empty)"
-                                placeholder="Non renseigné"
-                                @(Model.IsReadOnly ? "readonly" : string.Empty) />
-                        </label>
-                    }
-                </div>
-
-                <label class="field full">
-                    <span>Commentaire exceptionnel</span>
-                    <textarea name="Lignes[@i].CommentaireExceptionnel" rows="2" placeholder="Information ponctuelle à transmettre au livreur" @(Model.IsReadOnly ? "readonly" : string.Empty)>@ligne.CommentaireExceptionnel</textarea>
-                </label>
-
-                <details class="technical-details">
-                    <summary>Détail technique</summary>
-                    <code>@ligne.IdLigneSource</code>
-                </details>
-            </article>
-        }
+                </tbody>
+            </table>
+        </div>
     </section>
 
     @if (!Model.IsReadOnly)
     {
         <section class="sticky-actions">
             <button class="button button-secondary" type="submit" name="ActionType" value="save">Enregistrer brouillon</button>
-            <button class="button button-secondary" type="submit" name="ActionType" value="recap">Enregistrer et voir le récapitulatif</button>
-            <button class="button button-primary" type="submit" name="ActionType" value="ready">Marquer prête pour verrouillage</button>
+            <button class="button button-primary" type="submit" name="ActionType" value="recap">Enregistrer et voir le récapitulatif</button>
+            <button class="button button-final" type="submit" name="ActionType" value="ready">Marquer prête pour verrouillage</button>
         </section>
     }
 </form>

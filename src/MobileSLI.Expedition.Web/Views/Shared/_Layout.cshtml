@@ -7,31 +7,55 @@
     <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
 </head>
 <body>
-    <header class="topbar">
-        <a class="brand" asp-controller="Expedition" asp-action="Index">MobileSLI Expédition</a>
-        <nav class="nav">
-            <a asp-controller="Expedition" asp-action="Index">Accueil</a>
-            <a asp-controller="Expedition" asp-action="Tournees">Tournées</a>
-        </nav>
-    </header>
+    <div class="app-shell">
+        <aside class="sidebar">
+            <a class="sidebar-brand" asp-controller="Expedition" asp-action="Index">
+                <span class="brand-icon">SLI</span>
+                <span>
+                    <strong>MobileSLI</strong>
+                    <small>Expédition</small>
+                </span>
+            </a>
 
-    <main class="page">
-        @if (TempData["Success"] is string success)
-        {
-            <div class="alert alert-success">@success</div>
-        }
+            <nav class="sidebar-nav" aria-label="Navigation principale">
+                <a class="sidebar-link" asp-controller="Expedition" asp-action="Index">
+                    <span class="sidebar-dot"></span>
+                    Accueil
+                </a>
+                <a class="sidebar-link" asp-controller="Expedition" asp-action="Tournees">
+                    <span class="sidebar-dot"></span>
+                    Tournées
+                </a>
+                <a class="sidebar-link" asp-controller="Expedition" asp-action="Tournees">
+                    <span class="sidebar-dot"></span>
+                    Préparation
+                </a>
+                <a class="sidebar-link" asp-controller="Expedition" asp-action="Tournees">
+                    <span class="sidebar-dot"></span>
+                    Récapitulatif
+                </a>
+            </nav>
 
-        @if (TempData["Error"] is string error)
-        {
-            <div class="alert alert-error">@error</div>
-        }
+            <div class="sidebar-note">
+                <strong>00:05</strong>
+                <span>Verrouillage automatique API</span>
+            </div>
+        </aside>
 
-        @RenderBody()
-    </main>
+        <main class="app-main">
+            @if (TempData["Success"] is string success)
+            {
+                <div class="alert alert-success">@success</div>
+            }
 
-    <footer class="footer">
-        Module Expédition - brouillons locaux SQLite - verrouillage automatique API
-    </footer>
+            @if (TempData["Error"] is string error)
+            {
+                <div class="alert alert-error">@error</div>
+            }
+
+            @RenderBody()
+        </main>
+    </div>
 
     <script src="~/js/site.js" asp-append-version="true"></script>
     @await RenderSectionAsync("Scripts", required: false)

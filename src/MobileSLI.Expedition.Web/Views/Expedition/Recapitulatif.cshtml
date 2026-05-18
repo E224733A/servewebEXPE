@@ -3,13 +3,13 @@
     ViewData["Title"] = "Récapitulatif";
 }
 
-<section class="page-header">
+<section class="screen-header">
     <div>
         <p class="eyebrow">Récapitulatif avant verrouillage automatique</p>
         <h1>@Model.CodeTournee - @Model.LibelleTournee</h1>
         <p class="lead">
-            Date tournée : @Model.DateTournee.ToString("dd/MM/yyyy") - état :
-            <span class="badge @(Model.IsReadOnly ? "badge-locked" : "")">@Model.EtatPreparation</span>
+            Date tournée : @Model.DateTournee.ToString("dd/MM/yyyy") · état :
+            <span class="badge @CssStatus.ClassFor(Model.EtatPreparation)">@Model.EtatPreparation</span>
         </p>
     </div>
     <div class="actions">
@@ -18,14 +18,41 @@
     </div>
 </section>
 
-<section class="card">
-    <h2>Valeurs qui seront transmises au verrouillage</h2>
-    <p class="muted">
-        Le mobile ne lit pas ce brouillon. Les données seront disponibles pour le mobile uniquement après sauvegarde et verrouillage en BD par l'API centrale.
-    </p>
+<section class="metrics-row">
+    <article class="metric-card">
+        <span>Lignes</span>
+        <strong>@Model.NombreLignes</strong>
+    </article>
+    <article class="metric-card">
+        <span>Quantités renseignées</span>
+        <strong>@Model.NombreQuantitesRenseignees</strong>
+    </article>
+    <article class="metric-card">
+        <span>Commentaires</span>
+        <strong>@Model.NombreCommentaires</strong>
+    </article>
+    <article class="metric-card metric-card-warning">
+        <span>Verrouillage prévu</span>
+        <strong>00:05</strong>
+    </article>
+</section>
+
+<section class="panel panel-table">
+    <div class="section-header">
+        <div>
+            <p class="eyebrow">Contrôle final</p>
+            <h2>Valeurs qui seront transmises au verrouillage</h2>
+        </div>
+        <span class="badge badge-soft">Mobile alimenté uniquement après verrouillage BD</span>
+    </div>
+
+    <div class="status-strip status-strip-info">
+        <strong>Important</strong>
+        <span>Le mobile ne lit pas ce brouillon. Les données seront disponibles uniquement après sauvegarde et verrouillage en SQL Server par l'API centrale.</span>
+    </div>
 
     <div class="table-wrapper">
-        <table>
+        <table class="data-table recap-table">
             <thead>
                 <tr>
                     <th>Ordre</th>
@@ -51,8 +78,8 @@
                             var value = ligne.Quantites.TryGetValue(article.CodeArticle, out var quantite) ? quantite : null;
                             <td>@(value.HasValue ? value.Value.ToString() : "Non renseigné")</td>
                         }
-                        <td>@(string.IsNullOrWhiteSpace(ligne.CommentaireExceptionnel) ? "" : ligne.CommentaireExceptionnel)</td>
-                        <td>@(string.IsNullOrWhiteSpace(ligne.Instructions) ? "" : ligne.Instructions)</td>
+                        <td class="long-text">@(string.IsNullOrWhiteSpace(ligne.CommentaireExceptionnel) ? "" : ligne.CommentaireExceptionnel)</td>
+                        <td class="long-text">@(string.IsNullOrWhiteSpace(ligne.Instructions) ? "" : ligne.Instructions)</td>
                     </tr>
                 }
             </tbody>

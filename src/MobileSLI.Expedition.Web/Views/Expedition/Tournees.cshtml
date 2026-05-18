@@ -1,41 +1,87 @@
 @model TourneesIndexViewModel
 @{
     ViewData["Title"] = "Tournées préparables";
+    var lockedCount = Model.Tournees.Count(t => t.IsLocked);
+    var readyCount = Model.Tournees.Count(t => string.Equals(t.EtatPreparation, "PRETE_VERROUILLAGE", StringComparison.OrdinalIgnoreCase));
+    var inProgressCount = Model.Tournees.Count(t => string.Equals(t.EtatPreparation, "EN_PREPARATION_WEB", StringComparison.OrdinalIgnoreCase));
 }
 
-<section class="page-header">
+<section class="screen-header">
     <div>
         <p class="eyebrow">Date calculée par l'API centrale</p>
-        <h1>Tournées du @Model.DateTournee.ToString("dd/MM/yyyy")</h1>
-        <p class="lead">Fuseau métier : @Model.FuseauHoraireMetier. La sélection de tournée reste côté application web.</p>
+        <h1>Tournées préparables</h1>
+        <p class="lead">Date tournée : @Model.DateTournee.ToString("dd/MM/yyyy") · Fuseau métier : @Model.FuseauHoraireMetier</p>
     </div>
     <a class="button button-secondary" asp-action="Index">Retour accueil</a>
 </section>
 
+<section class="metrics-row">
+    <article class="metric-card">
+        <span>Tournées</span>
+        <strong>@Model.Tournees.Count</strong>
+    </article>
+    <article class="metric-card">
+        <span>En préparation</span>
+        <strong>@inProgressCount</strong>
+    </article>
+    <article class="metric-card">
+        <span>Prêtes</span>
+        <strong>@readyCount</strong>
+    </article>
+    <article class="metric-card">
+        <span>Verrouillées</span>
+        <strong>@lockedCount</strong>
+    </article>
+</section>
+
 @if (Model.Tournees.Count == 0)
 {
-    <section class="card">
+    <section class="panel">
         <p>Aucune tournée disponible pour cette date.</p>
     </section>
 }
 else
 {
-    <section class="tournee-list">
-        @foreach (var tournee in Model.Tournees)
-        {
-            <article class="card tournee-card">
-                <div>
-                    <span class="badge @(tournee.IsLocked ? "badge-locked" : "")">@tournee.EtatPreparation</span>
-                    <h2>@tournee.CodeTournee - @tournee.LibelleTournee</h2>
-                    <p>@tournee.NombreLignes ligne(s) de tournée chargée(s).</p>
-                </div>
-                <div class="actions">
-                    <a class="button button-primary" asp-action="Preparer" asp-route-codeTournee="@tournee.CodeTournee">
-                        @(tournee.IsLocked ? "Consulter" : "Préparer")
-                    </a>
-                    <a class="button button-secondary" asp-action="Recapitulatif" asp-route-codeTournee="@tournee.CodeTournee">Récapitulatif</a>
-                </div>
-            </article>
-        }
+    <section class="tournee-board">
+        <div class="panel">
+            <div class="section-header compact">
+                <h2>Liste des tournées</h2>
+                <span class="badge badge-soft">Chargées côté web</span>
+            </div>
+
+            <div class="tournee-list compact-list">
+                @foreach (var tournee in Model.Tournees)
+                {
+                    <article class="tournee-item">
+                        <div>
+                            <div class="tournee-title">@tournee.CodeTournee</div>
+                            <p>@tournee.LibelleTournee</p>
+                            <span class="badge @CssStatus.ClassFor(tournee.EtatPreparation)">@tournee.EtatPreparation</span>
+                        </div>
+                        <div class="tournee-actions">
+                            <span class="line-count">@tournee.NombreLignes ligne(s)</span>
+                            <a class="button button-primary button-small" asp-action="Preparer" asp-route-codeTournee="@tournee.CodeTournee">
+                                @(tournee.IsLocked ? "Consulter" : "Préparer")
+                            </a>
+                            <a class="button button-secondary button-small" asp-action="Recapitulatif" asp-route-codeTournee="@tournee.CodeTournee">Récap</a>
+                        </div>
+                    </article>
+                }
+            </div>
+        </div>
+
+        <aside class="panel side-panel">
+            <p class="eyebrow">Articles suivis</p>
+            <h2>Livré prévu</h2>
+            <div class="article-stack">
+                <span>ROLLS</span>
+                <span>TAPIS</span>
+                <span>SACS</span>
+            </div>
+            <div class="status-strip status-strip-warning">
+                <strong>Non saisi ici</strong>
+                <span>Les rolls vides récupérés restent côté mobile ou administration.</span>
+            </div>
+        </aside>
     </section>
 }

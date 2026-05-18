@@ -3,63 +3,76 @@
     ViewData["Title"] = "Accueil";
 }
 
-<section class="hero">
-    <div>
-        <p class="eyebrow">Module backend / web Expédition</p>
-        <h1>Préparation des tournées</h1>
+<section class="screen-grid screen-grid-home">
+    <article class="panel panel-hero">
+        <p class="eyebrow">Module Expédition</p>
+        <h1>Préparer les données de tournée avant chargement mobile</h1>
         <p class="lead">
-            Charge les données de la prochaine date préparable calculée par l'API centrale,
-            puis prépare les quantités livrées prévues et les commentaires exceptionnels côté web.
+            L'interface charge la prochaine date préparable calculée par l'API centrale. Les saisies restent côté web en brouillon SQLite jusqu'au verrouillage automatique.
         </p>
-    </div>
 
-    <form asp-action="Charger" method="post" class="hero-action">
-        @Html.AntiForgeryToken()
-        <button type="submit" class="button button-primary">Charger les données à préparer</button>
-        <span class="helper">Aucun choix manuel de date.</span>
-    </form>
-</section>
+        <div class="hero-actions-row">
+            <form asp-action="Charger" method="post">
+                @Html.AntiForgeryToken()
+                <button type="submit" class="button button-primary">Charger les données à préparer</button>
+            </form>
 
-<section class="grid two">
-    <article class="card">
-        <h2>Dernier chargement</h2>
+            <form asp-action="TesterApi" method="post">
+                @Html.AntiForgeryToken()
+                <button type="submit" class="button button-test">Mode test API</button>
+            </form>
+        </div>
+
+        <div class="status-strip status-strip-info">
+            <strong>Règle métier</strong>
+            <span>Aucun choix manuel de date. La date est calculée par l'API centrale.</span>
+        </div>
+        <div class="status-strip status-strip-warning">
+            <strong>Attention</strong>
+            <span>Le POST de verrouillage reste automatique autour de 00:05. Le bouton test API ne verrouille rien.</span>
+        </div>
+    </article>
+
+    <aside class="panel side-panel">
+        <p class="eyebrow">Dernier chargement</p>
         @if (Model.HasLoadedData)
         {
-            <dl class="summary-list">
-                <dt>Date préparée</dt>
-                <dd>@Model.DateTournee?.ToString("dd/MM/yyyy")</dd>
-                <dt>Tournées chargées</dt>
-                <dd>@Model.TourneesCount</dd>
-            </dl>
-            <a class="button button-secondary" asp-action="Tournees">Ouvrir les tournées</a>
+            <div class="metric-stack">
+                <div class="metric-card">
+                    <span>Date préparée</span>
+                    <strong>@Model.DateTournee?.ToString("dd/MM/yyyy")</strong>
+                </div>
+                <div class="metric-card">
+                    <span>Tournées chargées</span>
+                    <strong>@Model.TourneesCount</strong>
+                </div>
+            </div>
+            <a class="button button-secondary full-width" asp-action="Tournees">Ouvrir les tournées</a>
         }
         else
         {
-            <p>Aucune donnée n'a encore été chargée côté application web.</p>
+            <p class="muted">Aucune donnée n'a encore été chargée côté application web.</p>
         }
-    </article>
-
-    <article class="card">
-        <h2>Rappel métier</h2>
-        <ul class="clean-list">
-            <li>Les modifications sont enregistrées en brouillon SQLite.</li>
-            <li>Aucun POST API central n'est fait à chaque modification.</li>
-            <li>Le verrouillage automatique envoie le lot complet à l'API autour de 00:05.</li>
-            <li>Les rolls vides récupérés ne sont pas saisis ici.</li>
-        </ul>
-    </article>
+    </aside>
 </section>
 
-<section class="card">
-    <h2>Dernières tentatives de verrouillage</h2>
+<section class="panel">
+    <div class="section-header">
+        <div>
+            <p class="eyebrow">Verrouillage</p>
+            <h2>Dernières tentatives</h2>
+        </div>
+        <span class="badge badge-soft">Brouillon SQLite → API → SQL Server</span>
+    </div>
+
     @if (Model.RecentLocks.Count == 0)
     {
-        <p>Aucune tentative de verrouillage enregistrée.</p>
+        <p class="muted">Aucune tentative de verrouillage enregistrée.</p>
     }
     else
     {
         <div class="table-wrapper">
-            <table>
+            <table class="data-table">
                 <thead>
                     <tr>
                         <th>Lot</th>
@@ -74,7 +87,7 @@
                         <tr>
                             <td>@item.IdLotVerrouillage</td>
                             <td>@item.DateTournee.ToString("dd/MM/yyyy")</td>
-                            <td><span class="badge">@item.Status</span></td>
+                            <td><span class="badge @CssStatus.ClassFor(item.Status)">@item.Status</span></td>
                             <td>@item.ApiMessage</td>
                         </tr>
                     }
