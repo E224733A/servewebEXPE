@@ -8,7 +8,7 @@
 
 <section class="screen-header">
     <div>
-        <p class="eyebrow">Date calculée par l'API centrale</p>
+        <p class="eyebrow">Date préparée</p>
         <h1>Tournées préparables</h1>
         <p class="lead">Date tournée : @Model.DateTournee.ToString("dd/MM/yyyy") · Fuseau métier : @Model.FuseauHoraireMetier</p>
     </div>
@@ -46,7 +46,7 @@ else
         <div class="panel">
             <div class="section-header compact">
                 <h2>Liste des tournées</h2>
-                <span class="badge badge-soft">Chargées côté web</span>
+                <span class="badge badge-soft">@Model.Tournees.Count tournée(s)</span>
             </div>
 
             <div class="tournee-list compact-list">
@@ -77,10 +77,6 @@ else
                 <span>ROLLS</span>
                 <span>TAPIS</span>
                 <span>SACS</span>
-            </div>
-            <div class="status-strip status-strip-warning">
-                <strong>Non saisi ici</strong>
-                <span>Les rolls vides récupérés restent côté mobile ou administration.</span>
             </div>
         </aside>
     </section>

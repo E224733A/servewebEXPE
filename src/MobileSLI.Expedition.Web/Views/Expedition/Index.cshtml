@@ -6,18 +6,18 @@
 <section class="screen-grid screen-grid-home">
     <article class="panel panel-hero">
         <p class="eyebrow">Module Expédition</p>
-        <h1>Préparer les données de tournée avant chargement mobile</h1>
+        <h1>Préparer les données de tournée</h1>
         <p class="lead">
-            L'interface charge la prochaine date préparable calculée par l'API centrale. Les saisies restent côté web en brouillon SQLite jusqu'au verrouillage automatique.
+            Chargement des tournées à préparer, saisie des quantités prévues, puis verrouillage automatique.
         </p>
 
         <div class="hero-actions-row">
-            <form asp-action="Charger" method="post">
+            <form asp-action="Charger" method="post" data-loading-form>
                 @Html.AntiForgeryToken()
                 <button type="submit" class="button button-primary">Charger les données à préparer</button>
             </form>
 
-            <form asp-action="TesterApi" method="post">
+            <form asp-action="TesterApi" method="post" data-loading-form>
                 @Html.AntiForgeryToken()
                 <button type="submit" class="button button-test">Mode test API</button>
             </form>
@@ -25,11 +25,11 @@
 
         <div class="status-strip status-strip-info">
             <strong>Règle métier</strong>
-            <span>Aucun choix manuel de date. La date est calculée par l'API centrale.</span>
+            <span>Aucun choix manuel de date. La date est calculée automatiquement.</span>
         </div>
         <div class="status-strip status-strip-warning">
             <strong>Attention</strong>
-            <span>Le POST de verrouillage reste automatique autour de 00:05. Le bouton test API ne verrouille rien.</span>
+            <span>Le verrouillage automatique reste prévu autour de 00:05.</span>
         </div>
     </article>
 
@@ -51,7 +51,7 @@
         }
         else
         {
-            <p class="muted">Aucune donnée n'a encore été chargée côté application web.</p>
+            <p class="muted">Aucune donnée n'a encore été chargée.</p>
         }
     </aside>
 </section>
@@ -62,7 +62,7 @@
             <p class="eyebrow">Verrouillage</p>
             <h2>Dernières tentatives</h2>
         </div>
-        <span class="badge badge-soft">Brouillon SQLite → API → SQL Server</span>
+        <span class="badge badge-soft">Automatique</span>
     </div>
 
     @if (Model.RecentLocks.Count == 0)

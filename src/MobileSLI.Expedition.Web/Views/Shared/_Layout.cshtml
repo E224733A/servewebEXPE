@@ -7,6 +7,13 @@
     <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
 </head>
 <body>
+    <div id="global-loading-overlay" class="loading-overlay d-none" aria-live="polite" aria-busy="true">
+        <div class="loading-card">
+            <strong>Chargement en cours</strong>
+            <p>Merci de patienter.</p>
+        </div>
+    </div>
+
     <div class="app-shell">
         <aside class="sidebar">
             <a class="sidebar-brand" asp-controller="Expedition" asp-action="Index">
@@ -38,7 +45,7 @@
 
             <div class="sidebar-note">
                 <strong>00:05</strong>
-                <span>Verrouillage automatique API</span>
+                <span>Verrouillage automatique</span>
             </div>
         </aside>
 

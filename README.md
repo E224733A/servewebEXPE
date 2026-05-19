@@ -72,8 +72,10 @@ http://localhost:5088
 ## Démarrage rapide avec le script PowerShell
 
 ```powershell
-cd MobileSLI.Expedition
-.\scripts\run-dev.ps1
+dotnet clean
+dotnet restore
+dotnet build
+dotnet run --project ".\src\MobileSLI.Expedition.Web\MobileSLI.Expedition.Web.csproj" --urls "http://127.0.0.1:5100"
 ```
 
 ## Passer du mode fake au mode API réelle

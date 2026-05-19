@@ -81,6 +81,20 @@ public sealed class ExpeditionApiClient : IExpeditionApiClient
         _logger.LogInformation("Réponse verrouillage Expédition réel : {Statut} lot {IdLot}", result.Statut, result.IdLotVerrouillage);
         return result;
     }
+
+    public async Task<bool> TesterApiAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var response = await _httpClient.GetAsync("api/health", cancellationToken);
+            return response.IsSuccessStatusCode;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Erreur pendant le test de santé de l'API centrale.");
+            return false;
+        }
+    }
 }
 
 public sealed class ExpeditionApiException : Exception

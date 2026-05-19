@@ -3,9 +3,9 @@
     ViewData["Title"] = "Préparer une tournée";
 }
 
-<section class="screen-header">
+<section class="screen-header" data-code-tournee="@Model.CodeTournee">
     <div>
-        <p class="eyebrow">Préparation côté web</p>
+        <p class="eyebrow">Préparation</p>
         <h1>@Model.CodeTournee - @Model.LibelleTournee</h1>
         <p class="lead">
             Date tournée : @Model.DateTournee.ToString("dd/MM/yyyy") · état :
@@ -50,13 +50,13 @@
     <div class="alert alert-info">Cette tournée est verrouillée en BD. La consultation reste possible, mais les champs sont en lecture seule.</div>
 }
 
-<form asp-action="Preparer" asp-route-codeTournee="@Model.CodeTournee" method="post">
+<form asp-action="Preparer" asp-route-codeTournee="@Model.CodeTournee" method="post" data-loading-form>
     @Html.AntiForgeryToken()
 
     <section class="panel panel-table">
         <div class="section-header compact">
             <h2>Lignes de tournée</h2>
-            <span class="badge badge-soft">Saisie locale · pas de POST API central</span>
+            <span class="badge badge-soft">Préparation</span>
         </div>
 
         <div class="table-wrapper">
@@ -96,6 +96,10 @@
                                         type="number"
                                         min="0"
                                         step="1"
+                                        class="quantite-prevue-input"
+                                        data-code-tournee="@Model.CodeTournee"
+                                        data-id-ligne-source="@ligne.IdLigneSource"
+                                        data-code-article="@article.CodeArticle"
                                         name="Lignes[@i].Quantites[@j].QuantiteLivreePrevue"
                                         value="@(value.HasValue ? value.Value.ToString() : string.Empty)"
                                         placeholder="—"

@@ -161,7 +161,8 @@ public sealed class ExpeditionController : Controller
             return View(invalidModel);
         }
 
-        var errors = ValidatePreparationInput(input, tournee, load.ArticlesSuivis);
+        var articles = BuildArticlesPrepares(load.ArticlesSuivis);
+        var errors = ValidatePreparationInput(input, tournee, articles);
         if (errors.Count > 0)
         {
             foreach (var error in errors)
@@ -183,11 +184,14 @@ public sealed class ExpeditionController : Controller
             ? "PRETE_VERROUILLAGE"
             : "EN_PREPARATION_WEB";
 
+        var allowedArticles = articles.Select(a => a.CodeArticle).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var drafts = input.Lignes.Select(l => new SavePreparationLineDraft
         {
             IdLigneSource = l.IdLigneSource,
             CommentaireExceptionnel = l.CommentaireExceptionnel,
-            Quantites = l.Quantites.ToDictionary(q => q.CodeArticle, q => q.QuantiteLivreePrevue, StringComparer.OrdinalIgnoreCase)
+            Quantites = l.Quantites
+                .Where(q => allowedArticles.Contains(q.CodeArticle))
+                .ToDictionary(q => q.CodeArticle, q => q.QuantiteLivreePrevue, StringComparer.OrdinalIgnoreCase)
         }).ToList();
 
         try
@@ -229,6 +233,100 @@ public sealed class ExpeditionController : Controller
         return View(model);
     }
 
+    [HttpPost("/expedition/tournees/{codeTournee}/lignes/detail")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> DetailLigne(string codeTournee, string idLigneSource, PreparationLigneInputModel input, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(input.IdLigneSource))
+        {
+            input.IdLigneSource = idLigneSource;
+        }
+
+        var load = await _draftStore.GetLastLoadedDataAsync(cancellationToken);
+        var tournee = load?.Tournees.FirstOrDefault(t => string.Equals(t.CodeTournee, codeTournee, StringComparison.OrdinalIgnoreCase));
+        if (load is null || tournee is null)
+        {
+            TempData["Error"] = "La tournée demandée n'existe pas dans les données chargées.";
+            return RedirectToAction(nameof(Tournees));
+        }
+
+        var state = await _draftStore.GetTourneeStateAsync(load.DateTournee, codeTournee, cancellationToken);
+        if (tournee.EstVerrouilleeBd || state?.IsLocked == true)
+        {
+            TempData["Error"] = "Cette tournée est verrouillée en BD. La modification est refusée.";
+            return RedirectToAction(nameof(DetailLigne), new { codeTournee, idLigneSource = input.IdLigneSource });
+        }
+
+        var ligne = tournee.Lignes.FirstOrDefault(l => string.Equals(l.IdLigneSource, input.IdLigneSource, StringComparison.OrdinalIgnoreCase));
+        if (ligne is null)
+        {
+            TempData["Error"] = "La ligne demandée n'existe pas dans la tournée chargée.";
+            return RedirectToAction(nameof(Preparer), new { codeTournee });
+        }
+
+        var articles = BuildArticlesPrepares(load.ArticlesSuivis);
+        var errors = ValidatePreparationInput(
+            new PreparationInputModel
+            {
+                Lignes = [input]
+            },
+            tournee,
+            articles);
+
+        if (errors.Count > 0)
+        {
+            foreach (var error in errors)
+            {
+                ModelState.AddModelError(string.Empty, error);
+            }
+
+            var invalidModel = await BuildPreparationViewModelAsync(codeTournee, cancellationToken);
+            if (invalidModel is null)
+            {
+                return RedirectToAction(nameof(Tournees));
+            }
+
+            ReapplyInputValues(
+                invalidModel,
+                new PreparationInputModel
+                {
+                    Lignes = [input]
+                });
+
+            ViewData["SelectedLineId"] = input.IdLigneSource;
+            return View(invalidModel);
+        }
+
+        var allowedArticles = articles.Select(a => a.CodeArticle).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var draft = new SavePreparationLineDraft
+        {
+            IdLigneSource = input.IdLigneSource,
+            CommentaireExceptionnel = input.CommentaireExceptionnel,
+            Quantites = input.Quantites
+                .Where(q => allowedArticles.Contains(q.CodeArticle))
+                .ToDictionary(q => q.CodeArticle, q => q.QuantiteLivreePrevue, StringComparer.OrdinalIgnoreCase)
+        };
+
+        try
+        {
+            await _draftStore.SavePreparationAsync(
+                load.DateTournee,
+                codeTournee,
+                [draft],
+                "EN_PREPARATION_WEB",
+                HttpContext.Connection.RemoteIpAddress?.ToString(),
+                cancellationToken);
+
+            TempData["Success"] = "Ligne enregistrée dans le brouillon local.";
+            return RedirectToAction(nameof(DetailLigne), new { codeTournee, idLigneSource = input.IdLigneSource });
+        }
+        catch (InvalidOperationException ex)
+        {
+            TempData["Error"] = ex.Message;
+            return RedirectToAction(nameof(DetailLigne), new { codeTournee, idLigneSource = input.IdLigneSource });
+        }
+    }
+
     [HttpGet("/expedition/tournees/{codeTournee}/recapitulatif")]
     public async Task<IActionResult> Recapitulatif(string codeTournee, CancellationToken cancellationToken)
     {
@@ -254,6 +352,7 @@ public sealed class ExpeditionController : Controller
         var tourneeState = await _draftStore.GetTourneeStateAsync(load.DateTournee, codeTournee, cancellationToken);
         var lineStates = await _draftStore.GetLineStatesAsync(load.DateTournee, codeTournee, cancellationToken);
         var isReadOnly = tournee.EstVerrouilleeBd || tourneeState?.IsLocked == true;
+        var articlesPrepares = BuildArticlesPrepares(load.ArticlesSuivis);
 
         var model = new PreparationTourneeViewModel
         {
@@ -262,7 +361,7 @@ public sealed class ExpeditionController : Controller
             LibelleTournee = tournee.LibelleTournee,
             EtatPreparation = isReadOnly ? "VERROUILLEE_BD" : tourneeState?.Status ?? tournee.EtatPreparation,
             IsReadOnly = isReadOnly,
-            Articles = load.ArticlesSuivis,
+            Articles = articlesPrepares,
             Lignes = []
         };
 
@@ -286,7 +385,7 @@ public sealed class ExpeditionController : Controller
                 Quantites = new Dictionary<string, int?>(StringComparer.OrdinalIgnoreCase)
             };
 
-            foreach (var article in load.ArticlesSuivis)
+            foreach (var article in articlesPrepares)
             {
                 var value = lineState is not null && lineState.Quantites.TryGetValue(article.CodeArticle, out var stored)
                     ? stored
@@ -299,6 +398,26 @@ public sealed class ExpeditionController : Controller
         }
 
         return model;
+    }
+
+    private static List<ArticleSuiviDto> BuildArticlesPrepares(List<ArticleSuiviDto> articles)
+    {
+        var defaults = new[]
+        {
+            new ArticleSuiviDto { CodeArticle = "ROLLS", LibelleArticle = "Rolls pleins", TypeQuantite = "LIVREE_PREVUE" },
+            new ArticleSuiviDto { CodeArticle = "TAPIS", LibelleArticle = "Tapis", TypeQuantite = "LIVREE_PREVUE" },
+            new ArticleSuiviDto { CodeArticle = "SACS", LibelleArticle = "Sacs", TypeQuantite = "LIVREE_PREVUE" }
+        };
+
+        return defaults
+            .Select(defaultArticle =>
+            {
+                var articleApi = articles.FirstOrDefault(a => string.Equals(a.CodeArticle, defaultArticle.CodeArticle, StringComparison.OrdinalIgnoreCase));
+                return articleApi is null || string.IsNullOrWhiteSpace(articleApi.CodeArticle)
+                    ? defaultArticle
+                    : articleApi;
+            })
+            .ToList();
     }
 
     private static void ReapplyInputValues(PreparationTourneeViewModel model, PreparationInputModel input)

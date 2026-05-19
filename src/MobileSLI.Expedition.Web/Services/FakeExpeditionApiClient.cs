@@ -16,4 +16,9 @@ public sealed class FakeExpeditionApiClient : IExpeditionApiClient
     {
         throw new InvalidOperationException("FakeExpeditionApiClient est désactivé dans la version finale. Configure ExpeditionApi:BaseUrl et utilise l'API centrale réelle.");
     }
+
+    public Task<bool> TesterApiAsync(CancellationToken cancellationToken)
+    {
+        throw new InvalidOperationException("FakeExpeditionApiClient est désactivé dans la version finale. Configure ExpeditionApi:BaseUrl et utilise l'API centrale réelle.");
+    }
 }

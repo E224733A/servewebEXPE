@@ -4,6 +4,7 @@ document.addEventListener('DOMContentLoaded', function () {
   numberInputs.forEach(function (input) {
     input.addEventListener('input', function () {
       if (input.value === '') {
+        input.setCustomValidity('');
         return;
       }
 
