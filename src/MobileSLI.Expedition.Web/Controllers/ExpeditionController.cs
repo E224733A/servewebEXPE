@@ -67,18 +67,20 @@ public sealed class ExpeditionController : Controller
     {
         try
         {
-            var response = await _apiClient.GetPreparationsAsync(cancellationToken);
-            TempData["Success"] = string.Equals(response.Statut, "SUCCESS", StringComparison.OrdinalIgnoreCase)
-                ? $"Mode test API : API joignable. {response.Tournees.Count} tournée(s) reçue(s) pour le {response.DateTournee:dd/MM/yyyy}. Aucune donnée n'a été enregistrée par ce test."
-                : $"Mode test API : réponse reçue, statut {response.Statut}. Aucune donnée n'a été enregistrée par ce test.";
+            var ok = await _apiClient.TesterApiAsync(cancellationToken);
+
+            TempData[ok ? "Success" : "Error"] = ok
+                ? "Mode test API : API joignable. Aucun chargement métier n'a été effectué."
+                : "Mode test API : l'API ne répond pas correctement.";
+
+            return RedirectToAction(nameof(Index));
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Erreur pendant le test API Expédition.");
-            TempData["Error"] = "Mode test API : impossible de joindre ou de lire l'API centrale.";
+            TempData["Error"] = "Mode test API : impossible de joindre l'API centrale.";
+            return RedirectToAction(nameof(Index));
         }
-
-        return RedirectToAction(nameof(Index));
     }
 
     [HttpGet("/expedition/tournees")]

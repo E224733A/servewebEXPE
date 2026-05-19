@@ -1,3 +1,4 @@
+@* Layout de base pour l'application Expédition *@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -7,13 +8,13 @@
     <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
 </head>
 <body>
-    <div id="global-loading-overlay" class="loading-overlay d-none" aria-live="polite" aria-busy="true">
+    <!-- Superposition globale de chargement (masquée par défaut) -->
+    <div id="global-loading" class="loading-overlay d-none">
         <div class="loading-card">
-            <strong>Chargement en cours</strong>
-            <p>Merci de patienter.</p>
+            <div class="loader"></div>
+            <p>Chargement…</p>
         </div>
     </div>
-
     <div class="app-shell">
         <aside class="sidebar">
             <a class="sidebar-brand" asp-controller="Expedition" asp-action="Index">
@@ -45,7 +46,7 @@
 
             <div class="sidebar-note">
                 <strong>00:05</strong>
-                <span>Verrouillage automatique</span>
+                <span>Verrouillage automatique API</span>
             </div>
         </aside>
 
@@ -54,12 +55,10 @@
             {
                 <div class="alert alert-success">@success</div>
             }
-
             @if (TempData["Error"] is string error)
             {
                 <div class="alert alert-error">@error</div>
             }
-
             @RenderBody()
         </main>
     </div>

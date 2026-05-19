@@ -3,9 +3,9 @@
     ViewData["Title"] = "Préparer une tournée";
 }
 
-<section class="screen-header" data-code-tournee="@Model.CodeTournee">
+<section class="screen-header">
     <div>
-        <p class="eyebrow">Préparation</p>
+        <p class="eyebrow">Préparation côté web</p>
         <h1>@Model.CodeTournee - @Model.LibelleTournee</h1>
         <p class="lead">
             Date tournée : @Model.DateTournee.ToString("dd/MM/yyyy") · état :
@@ -56,7 +56,7 @@
     <section class="panel panel-table">
         <div class="section-header compact">
             <h2>Lignes de tournée</h2>
-            <span class="badge badge-soft">Préparation</span>
+            <span class="badge badge-soft">Saisie locale · pas de POST API central</span>
         </div>
 
         <div class="table-wrapper">
@@ -96,13 +96,13 @@
                                         type="number"
                                         min="0"
                                         step="1"
-                                        class="quantite-prevue-input"
-                                        data-code-tournee="@Model.CodeTournee"
-                                        data-id-ligne-source="@ligne.IdLigneSource"
-                                        data-code-article="@article.CodeArticle"
                                         name="Lignes[@i].Quantites[@j].QuantiteLivreePrevue"
                                         value="@(value.HasValue ? value.Value.ToString() : string.Empty)"
                                         placeholder="—"
+                                        data-line-id="@ligne.IdLigneSource"
+                                        data-article-code="@article.CodeArticle"
+                                        data-code-tournee="@Model.CodeTournee"
+                                        onchange="updateQuantitePrevue(this)"
                                         @(Model.IsReadOnly ? "readonly" : string.Empty) />
                                 </td>
                             }

@@ -6,7 +6,7 @@ public sealed class ExpeditionLoadResponse
 {
     public string Statut { get; set; } = "SUCCESS";
 
-    public string SchemaVersion { get; set; } = "1.0";
+    public string SchemaVersion { get; set; } = "1.2";
 
     public DateOnly DateTournee { get; set; }
 
@@ -18,6 +18,7 @@ public sealed class ExpeditionLoadResponse
 
     public DateTimeOffset DateGenerationApi { get; set; }
 
+    [JsonPropertyName("articlesPreparables")]
     public List<ArticleSuiviDto> ArticlesSuivis { get; set; } = [];
 
     public List<TourneePreparationDto> Tournees { get; set; } = [];
@@ -29,9 +30,12 @@ public sealed class ArticleSuiviDto
 {
     public string CodeArticle { get; set; } = string.Empty;
 
+    [JsonPropertyName("libelle")]
     public string LibelleArticle { get; set; } = string.Empty;
 
     public string TypeQuantite { get; set; } = "LIVREE_PREVUE";
+
+    public bool QuantiteNullable { get; set; } = true;
 }
 
 public sealed class TourneePreparationDto
@@ -59,6 +63,7 @@ public sealed class LignePreparationDto
 
     public InfosLectureDto InfosLecture { get; set; } = new();
 
+    [JsonPropertyName("preparationInitiale")]
     public BrouillonInitialDto BrouillonInitial { get; set; } = new();
 }
 
@@ -105,12 +110,16 @@ public sealed class BrouillonInitialDto
 {
     public string? CommentaireExceptionnel { get; set; }
 
+    [JsonPropertyName("quantitesPrevues")]
     public List<QuantiteInitialeDto> Quantites { get; set; } = [];
 }
 
 public sealed class QuantiteInitialeDto
 {
     public string CodeArticle { get; set; } = string.Empty;
+
+    [JsonPropertyName("libelle")]
+    public string? LibelleArticle { get; set; }
 
     public int? QuantiteLivreePrevue { get; set; }
 }
@@ -128,7 +137,7 @@ public sealed class ReglesPreparationDto
 
 public sealed class ExpeditionLockRequest
 {
-    public string SchemaVersion { get; set; } = "1.0";
+    public string SchemaVersion { get; set; } = "1.2";
 
     public string IdLotVerrouillage { get; set; } = string.Empty;
 
@@ -147,6 +156,8 @@ public sealed class TourneeLockDto
 {
     public string CodeTournee { get; set; } = string.Empty;
 
+    public string LibelleTournee { get; set; } = string.Empty;
+
     public string StatutPreparationWeb { get; set; } = "EN_PREPARATION_WEB";
 
     public List<LigneLockDto> Lignes { get; set; } = [];
@@ -156,8 +167,15 @@ public sealed class LigneLockDto
 {
     public string IdLigneSource { get; set; } = string.Empty;
 
+    public int OrdreArret { get; set; }
+
+    public ClientDto Client { get; set; } = new();
+
+    public PointLivraisonDto PointLivraison { get; set; } = new();
+
     public string? CommentaireExceptionnel { get; set; }
 
+    [JsonPropertyName("quantitesPrevues")]
     public List<QuantiteLockDto> Quantites { get; set; } = [];
 
     public DerniereModificationDto DerniereModification { get; set; } = new();
@@ -167,12 +185,17 @@ public sealed class QuantiteLockDto
 {
     public string CodeArticle { get; set; } = string.Empty;
 
+    [JsonPropertyName("libelle")]
+    public string? LibelleArticle { get; set; }
+
     public int? QuantiteLivreePrevue { get; set; }
 }
 
 public sealed class DerniereModificationDto
 {
     public DateTimeOffset Date { get; set; }
+
+    public string Utilisateur { get; set; } = "EXPEDITION";
 }
 
 public sealed class ExpeditionLockResponse
