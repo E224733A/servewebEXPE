@@ -1,6 +1,9 @@
+@inject Microsoft.AspNetCore.Hosting.IWebHostEnvironment Env
 @model PreparationTourneeViewModel
 @{
     ViewData["Title"] = "Récapitulatif";
+    var isDevelopment = string.Equals(Env.EnvironmentName, "Development", StringComparison.OrdinalIgnoreCase);
+    var isReadyForLock = string.Equals(Model.EtatPreparation, "PRETE_VERROUILLAGE", StringComparison.OrdinalIgnoreCase);
 }
 
 <section class="screen-header">
@@ -36,6 +39,50 @@
         <strong>00:05</strong>
     </article>
 </section>
+
+@if (isDevelopment)
+{
+    <section class="panel">
+        <div class="section-header">
+            <div>
+                <p class="eyebrow">Développement uniquement</p>
+                <h2>Verrouillage manuel de test</h2>
+            </div>
+            <span class="badge badge-warning">DEV</span>
+        </div>
+
+        <div class="status-strip status-strip-warning">
+            <strong>Attention</strong>
+            <span>
+                Ce bouton déclenche le même service que le verrouillage automatique de 00:05.
+                Il sert uniquement à tester le POST API de verrouillage et la sauvegarde SQL Server.
+            </span>
+        </div>
+
+        @if (isReadyForLock && !Model.IsReadOnly)
+        {
+            <form asp-action="VerrouillerManuellementDeveloppement"
+                  method="post"
+                  data-loading-form>
+                @Html.AntiForgeryToken()
+                <input type="hidden" name="codeTournee" value="@Model.CodeTournee" />
+
+                <button type="submit" class="button button-final">
+                    Verrouiller maintenant en développement
+                </button>
+            </form>
+        }
+        else
+        {
+            <div class="status-strip status-strip-info">
+                <strong>Bouton indisponible</strong>
+                <span>
+                    La tournée doit être marquée PRETE_VERROUILLAGE et ne doit pas déjà être verrouillée.
+                </span>
+            </div>
+        }
+    </section>
+}
 
 <section class="panel panel-table">
     <div class="section-header">

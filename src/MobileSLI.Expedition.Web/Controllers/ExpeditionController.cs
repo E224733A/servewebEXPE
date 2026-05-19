@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
 using MobileSLI.Expedition.Web.Data;
 using MobileSLI.Expedition.Web.Models;
@@ -10,12 +11,21 @@ public sealed class ExpeditionController : Controller
 {
     private readonly IExpeditionApiClient _apiClient;
     private readonly IExpeditionDraftStore _draftStore;
+    private readonly VerrouillageService _verrouillageService;
+    private readonly IWebHostEnvironment _environment;
     private readonly ILogger<ExpeditionController> _logger;
 
-    public ExpeditionController(IExpeditionApiClient apiClient, IExpeditionDraftStore draftStore, ILogger<ExpeditionController> logger)
+    public ExpeditionController(
+        IExpeditionApiClient apiClient,
+        IExpeditionDraftStore draftStore,
+        VerrouillageService verrouillageService,
+        IWebHostEnvironment environment,
+        ILogger<ExpeditionController> logger)
     {
         _apiClient = apiClient;
         _draftStore = draftStore;
+        _verrouillageService = verrouillageService;
+        _environment = environment;
         _logger = logger;
     }
 
@@ -340,6 +350,46 @@ public sealed class ExpeditionController : Controller
         }
 
         return View(model);
+    }
+
+    [HttpPost("/expedition/developpement/verrouiller-maintenant")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> VerrouillerManuellementDeveloppement(string codeTournee, CancellationToken cancellationToken)
+    {
+        if (!string.Equals(_environment.EnvironmentName, "Development", StringComparison.OrdinalIgnoreCase))
+        {
+            return NotFound();
+        }
+
+        if (string.IsNullOrWhiteSpace(codeTournee))
+        {
+            TempData["Error"] = "Impossible de déclencher le verrouillage manuel : code tournée manquant.";
+            return RedirectToAction(nameof(Tournees));
+        }
+
+        try
+        {
+            var requestedAtLocal = DateTimeOffset.Now;
+            var lotSequence = $"DEV-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}";
+
+            var executed = await _verrouillageService.TryRunAsync(requestedAtLocal, lotSequence, cancellationToken);
+
+            if (executed)
+            {
+                TempData["Success"] = "Verrouillage manuel de développement exécuté. Vérifie l'historique et la base SQL Server.";
+            }
+            else
+            {
+                TempData["Error"] = "Aucun lot à verrouiller. Vérifie qu'une tournée est prête pour verrouillage et qu'elle n'est pas déjà verrouillée.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erreur pendant le verrouillage manuel de développement.");
+            TempData["Error"] = "Erreur technique pendant le verrouillage manuel de développement.";
+        }
+
+        return RedirectToAction(nameof(Recapitulatif), new { codeTournee });
     }
 
     private async Task<PreparationTourneeViewModel?> BuildPreparationViewModelAsync(string codeTournee, CancellationToken cancellationToken)
