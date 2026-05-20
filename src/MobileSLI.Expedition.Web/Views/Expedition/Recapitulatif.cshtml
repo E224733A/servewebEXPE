@@ -40,6 +40,47 @@
     </article>
 </section>
 
+@if (!Model.IsReadOnly && !isReadyForLock)
+{
+    <section class="panel">
+        <div class="section-header">
+            <h2>Prêt pour le verrouillage</h2>
+        </div>
+
+        <div class="status-strip status-strip-info">
+            <strong>Prochaine étape</strong>
+            <span>
+                Vérifiez les valeurs ci-dessous. Quand vous êtes prêt, cliquez sur le bouton pour marquer cette tournée prête pour le verrouillage automatique.
+            </span>
+        </div>
+
+        <form asp-action="MarquerPretPourVerrouillage"
+              asp-route-codeTournee="@Model.CodeTournee"
+              method="post">
+            @Html.AntiForgeryToken()
+
+            <button type="submit" class="button button-success">
+                Marquer prêt pour verrouillage
+            </button>
+        </form>
+    </section>
+}
+else if (isReadyForLock && !Model.IsReadOnly)
+{
+    <section class="panel">
+        <div class="section-header">
+            <h2>État du verrouillage</h2>
+        </div>
+
+        <div class="status-strip status-strip-success">
+            <strong>Tournée prête</strong>
+            <span>
+                Tournée prête pour le verrouillage automatique à 00:05.
+            </span>
+        </div>
+    </section>
+}
+
 @if (isDevelopment)
 {
     <section class="panel">

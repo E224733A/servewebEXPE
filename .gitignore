@@ -15,7 +15,6 @@ artifacts/
 
 # Logs and local data
 logs/
-data/
 *.db
 *.db3
 *.sqlite

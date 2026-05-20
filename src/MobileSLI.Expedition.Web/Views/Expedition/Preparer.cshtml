@@ -50,7 +50,12 @@
     <div class="alert alert-info">Cette tournée est verrouillée en BD. La consultation reste possible, mais les champs sont en lecture seule.</div>
 }
 
-<form asp-action="Preparer" asp-route-codeTournee="@Model.CodeTournee" method="post" data-loading-form>
+<form id="preparation-form" 
+      asp-action="Preparer" 
+      asp-route-codeTournee="@Model.CodeTournee" 
+      method="post" 
+      data-loading-form
+      data-autosave-url="@Url.Action("AutosavePreparation", "Expedition", new { codeTournee = Model.CodeTournee })">
     @Html.AntiForgeryToken()
 
     <section class="panel panel-table">
@@ -139,9 +144,83 @@
     @if (!Model.IsReadOnly)
     {
         <section class="sticky-actions">
-            <button class="button button-secondary" type="submit" name="ActionType" value="save">Enregistrer brouillon</button>
+            <div id="autosave-status" class="autosave-status">
+                Brouillon enregistré automatiquement.
+            </div>
             <button class="button button-primary" type="submit" name="ActionType" value="recap">Enregistrer et voir le récapitulatif</button>
-            <button class="button button-final" type="submit" name="ActionType" value="ready">Marquer prête pour verrouillage</button>
         </section>
     }
 </form>
+
+@section Scripts {
+<script>
+(() => {
+    const form = document.getElementById("preparation-form");
+    const status = document.getElementById("autosave-status");
+
+    if (!form || !status) {
+        return;
+    }
+
+    let timer = null;
+    let isSaving = false;
+    let hasPendingChanges = false;
+
+    const autosaveUrl = form.dataset.autosaveUrl;
+
+    async function autosave() {
+        if (isSaving || !hasPendingChanges) {
+            return;
+        }
+
+        isSaving = true;
+        status.textContent = "Enregistrement automatique…";
+
+        try {
+            const formData = new FormData(form);
+            formData.set("ActionType", "autosave");
+
+            const response = await fetch(autosaveUrl, {
+                method: "POST",
+                body: formData,
+                credentials: "same-origin",
+                headers: {
+                    "X-Requested-With": "XMLHttpRequest"
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error("Autosave failed");
+            }
+
+            hasPendingChanges = false;
+            const now = new Date();
+            status.textContent = "Brouillon enregistré à " + now.toLocaleTimeString();
+        } catch {
+            status.textContent = "Erreur pendant l'enregistrement automatique.";
+        } finally {
+            isSaving = false;
+        }
+    }
+
+    function scheduleAutosave() {
+        hasPendingChanges = true;
+
+        if (timer) {
+            clearTimeout(timer);
+        }
+
+        timer = setTimeout(autosave, 1000);
+    }
+
+    form.addEventListener("input", scheduleAutosave);
+    form.addEventListener("change", scheduleAutosave);
+
+    window.addEventListener("beforeunload", () => {
+        if (hasPendingChanges) {
+            navigator.sendBeacon?.(autosaveUrl, new FormData(form));
+        }
+    });
+})();
+</script>
+}
