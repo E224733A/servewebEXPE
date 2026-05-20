@@ -199,37 +199,6 @@ public sealed class ExpeditionController : Controller
             : RedirectToAction(nameof(Preparer), new { codeTournee });
     }
 
-    [HttpPost("/expedition/tournees/{codeTournee}/autosave")]
-    [ValidateAntiForgeryToken]
-    public async Task<IActionResult> AutosavePreparation(
-        string codeTournee,
-        PreparationInputModel input,
-        CancellationToken cancellationToken)
-    {
-        var result = await SavePreparationDraftAsync(
-            codeTournee,
-            input,
-            "EN_PREPARATION_WEB",
-            cancellationToken);
-
-        if (!result.Success)
-        {
-            return BadRequest(new
-            {
-                success = false,
-                message = result.Message
-            });
-        }
-
-        return Ok(new
-        {
-            success = true,
-            message = "Brouillon enregistré automatiquement.",
-            savedAt = DateTimeOffset.Now
-        });
-    }
-
-
     [HttpGet("/expedition/tournees/{codeTournee}/lignes/detail")]
     public async Task<IActionResult> DetailLigne(string codeTournee, string idLigneSource, CancellationToken cancellationToken)
     {
