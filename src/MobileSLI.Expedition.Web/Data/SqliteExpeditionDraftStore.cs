@@ -24,10 +24,8 @@ namespace MobileSLI.Expedition.Web.Data;
 /// </summary>
 public sealed class SqliteExpeditionDraftStore : IExpeditionDraftStore
 {
-    private static readonly HashSet<string> LockablePreparationStatuses = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "PRETE_VERROUILLAGE"
-    };
+    private const string StatusReadyForLock = "PRETE_VERROUILLAGE";
+    private const string StatusLockedBd = "VERROUILLEE_BD";
 
     private readonly ExpeditionDbOptions _options;
     private readonly ILogger<SqliteExpeditionDraftStore> _logger;
@@ -171,6 +169,10 @@ public sealed class SqliteExpeditionDraftStore : IExpeditionDraftStore
                     IsLocked = CASE
                         WHEN Expedition_TourneeState.IsLocked = 1 THEN 1
                         ELSE excluded.IsLocked
+                    END,
+                    LastModifiedUtc = CASE
+                        WHEN Expedition_TourneeState.Status IN ('EN_PREPARATION_WEB', 'PRETE_VERROUILLAGE') THEN Expedition_TourneeState.LastModifiedUtc
+                        ELSE excluded.LastModifiedUtc
                     END;
                 """,
                 cancellationToken,
@@ -416,21 +418,11 @@ public sealed class SqliteExpeditionDraftStore : IExpeditionDraftStore
         return value is not null && value != DBNull.Value;
     }
 
-    public async Task<PreparedLockLot?> BuildLockLotAsync(
-        DateTimeOffset requestedAtLocal,
-        string lotSequence,
-        bool includeAlreadyLocked,
-        string? codeTourneeFilter,
-        CancellationToken cancellationToken)
+    public async Task<PreparedLockLot?> BuildLockLotAsync(DateTimeOffset requestedAtLocal, string lotSequence, CancellationToken cancellationToken)
     {
         var load = await GetLastLoadedDataAsync(cancellationToken);
 
         if (load is null)
-        {
-            return null;
-        }
-
-        if (!includeAlreadyLocked && await HasSuccessfulLockAsync(load.DateTournee, cancellationToken))
         {
             return null;
         }
@@ -443,9 +435,7 @@ public sealed class SqliteExpeditionDraftStore : IExpeditionDraftStore
         {
             SchemaVersion = string.IsNullOrWhiteSpace(load.SchemaVersion) ? "1.2" : load.SchemaVersion,
             IdLotVerrouillage = $"EXP-{load.DateTournee:yyyy-MM-dd}-{requestedAtLocal:HHmm}-{lotSequence}",
-            Source = includeAlreadyLocked
-                ? "APPLICATION_WEB_EXPEDITION_DEV_REVERROUILLAGE"
-                : "APPLICATION_WEB_EXPEDITION",
+            Source = "APPLICATION_WEB_EXPEDITION",
             DateTournee = load.DateTournee,
             DateVerrouillageDemandee = requestedAtLocal,
             FuseauHoraireMetier = fuseauHoraireMetier,
@@ -457,34 +447,12 @@ public sealed class SqliteExpeditionDraftStore : IExpeditionDraftStore
 
         foreach (var tournee in load.Tournees.OrderBy(t => t.CodeTournee))
         {
-            if (!string.IsNullOrWhiteSpace(codeTourneeFilter)
-                && !string.Equals(tournee.CodeTournee, codeTourneeFilter, StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
-
             tourneeStates.TryGetValue(tournee.CodeTournee, out var tourneeState);
 
             var status = tourneeState?.Status ?? tournee.EtatPreparation;
-            var isLocked = tournee.EstVerrouilleeBd || tourneeState?.IsLocked == true;
-            var isReadyForNormalLock = LockablePreparationStatuses.Contains(status);
+            var isReadyForLock = string.Equals(status, StatusReadyForLock, StringComparison.OrdinalIgnoreCase);
 
-            // En mode normal, on conserve le comportement strict : uniquement les tournées prêtes et non verrouillées.
-            // En mode développement forcé, le bouton agit sur la tournée affichée et peut reconstruire un lot
-            // même si elle est déjà verrouillée ou si l'état local n'est plus PRETE_VERROUILLAGE.
-            var isRequestedTourneeForForcedLock = includeAlreadyLocked
-                && !string.IsNullOrWhiteSpace(codeTourneeFilter)
-                && string.Equals(tournee.CodeTournee, codeTourneeFilter, StringComparison.OrdinalIgnoreCase);
-
-            var isEligibleForForcedLock = includeAlreadyLocked
-                && (isRequestedTourneeForForcedLock || isReadyForNormalLock || IsAlreadyLockedStatus(status, isLocked));
-
-            if (!isReadyForNormalLock && !isEligibleForForcedLock)
-            {
-                continue;
-            }
-
-            if (isLocked && !includeAlreadyLocked)
+            if (!isReadyForLock)
             {
                 continue;
             }
@@ -540,7 +508,7 @@ public sealed class SqliteExpeditionDraftStore : IExpeditionDraftStore
                     DerniereModification = new DerniereModificationDto
                     {
                         Date = lineState?.LastModifiedUtc ?? requestedAtLocal,
-                        Utilisateur = includeAlreadyLocked ? "EXPEDITION_WEB_DEV" : "EXPEDITION_WEB"
+                        Utilisateur = "EXPEDITION_WEB"
                     }
                 });
             }
@@ -549,13 +517,14 @@ public sealed class SqliteExpeditionDraftStore : IExpeditionDraftStore
             {
                 CodeTournee = tournee.CodeTournee,
                 LibelleTournee = tournee.LibelleTournee,
-                StatutPreparationWeb = isReadyForNormalLock ? status : "PRETE_VERROUILLAGE",
+                StatutPreparationWeb = StatusReadyForLock,
                 Lignes = lineDtos
             });
         }
 
         if (request.Tournees.Count == 0)
         {
+            _logger.LogInformation("Aucune tournée PRETE_VERROUILLAGE à transmettre au verrouillage Expédition.");
             return null;
         }
 
@@ -607,7 +576,7 @@ public sealed class SqliteExpeditionDraftStore : IExpeditionDraftStore
               AND IsLocked = 0;
             """,
             cancellationToken,
-            ("$statusVerrouillage", string.IsNullOrWhiteSpace(response.StatutVerrouillage) ? "VERROUILLEE_BD" : response.StatutVerrouillage),
+            ("$statusVerrouillage", string.IsNullOrWhiteSpace(response.StatutVerrouillage) ? StatusLockedBd : response.StatutVerrouillage),
             ("$lastModifiedUtc", ToDbDateTime(now)),
             ("$dateTournee", ToDbDate(response.DateTournee)));
 
@@ -795,16 +764,6 @@ public sealed class SqliteExpeditionDraftStore : IExpeditionDraftStore
         return string.Equals(codeArticle, "ROLLS", StringComparison.OrdinalIgnoreCase)
             || string.Equals(codeArticle, "TAPIS", StringComparison.OrdinalIgnoreCase)
             || string.Equals(codeArticle, "SACS", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static bool IsAlreadyLockedStatus(string? status, bool isLocked)
-    {
-        return isLocked
-            || string.Equals(status, "VERROUILLEE_BD", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(status, "VERROUILLEE", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(status, "ALREADY_LOCKED", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(status, "ALREADY_PROCESSED", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(status, "SUCCESS", StringComparison.OrdinalIgnoreCase);
     }
 
     private static DateTimeOffset ConvertUtcToBusinessOffset(DateTimeOffset utcDate, string? timeZoneId)

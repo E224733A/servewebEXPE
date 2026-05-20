@@ -23,32 +23,22 @@ public sealed class VerrouillageService
         _logger = logger;
     }
 
-    public async Task<bool> TryRunAsync(
-        DateTimeOffset requestedAtLocal,
-        string lotSequence,
-        CancellationToken cancellationToken,
-        bool includeAlreadyLocked = false,
-        string? codeTourneeFilter = null)
+    public async Task<bool> TryRunAsync(DateTimeOffset requestedAtLocal, string lotSequence, CancellationToken cancellationToken)
     {
-        var lot = await _draftStore.BuildLockLotAsync(
-            requestedAtLocal,
-            lotSequence,
-            includeAlreadyLocked,
-            codeTourneeFilter,
-            cancellationToken);
-
+        var lot = await _draftStore.BuildLockLotAsync(requestedAtLocal, lotSequence, cancellationToken);
         if (lot is null)
         {
-            _logger.LogDebug(
-                "Aucun lot Expédition à verrouiller. IncludeAlreadyLocked={IncludeAlreadyLocked}, CodeTourneeFilter={CodeTourneeFilter}.",
-                includeAlreadyLocked,
-                codeTourneeFilter);
+            _logger.LogDebug("Aucune tournée PRETE_VERROUILLAGE à verrouiller dans le stockage Expédition.");
             return false;
         }
 
         try
         {
-            _logger.LogInformation("Envoi du lot Expédition {IdLot} vers l'API centrale.", lot.Request.IdLotVerrouillage);
+            _logger.LogInformation(
+                "Envoi du lot Expédition {IdLot} vers l'API centrale avec {TourneesCount} tournée(s) prête(s).",
+                lot.Request.IdLotVerrouillage,
+                lot.Request.Tournees.Count);
+
             var response = await _apiClient.VerrouillerAsync(lot.Request, cancellationToken);
 
             if (SuccessStatuses.Contains(response.Statut))

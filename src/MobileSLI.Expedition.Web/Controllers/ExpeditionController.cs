@@ -399,20 +399,15 @@ public sealed class ExpeditionController : Controller
             var requestedAtLocal = DateTimeOffset.Now;
             var lotSequence = $"DEV-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}";
 
-            var executed = await _verrouillageService.TryRunAsync(
-                requestedAtLocal,
-                lotSequence,
-                cancellationToken,
-                includeAlreadyLocked: true,
-                codeTourneeFilter: codeTournee);
+            var executed = await _verrouillageService.TryRunAsync(requestedAtLocal, lotSequence, cancellationToken);
 
             if (executed)
             {
-                TempData["Success"] = "Verrouillage manuel de développement exécuté. Vérifie l'historique et la base SQL Server.";
+                TempData["Success"] = "Verrouillage manuel de développement exécuté pour toutes les tournées PRETE_VERROUILLAGE. Vérifie l'historique et la base SQL Server.";
             }
             else
             {
-                TempData["Error"] = "Aucun lot n'a pu être construit pour cette tournée. Vérifie que les données Expédition sont chargées et que la tournée existe encore dans le stockage local.";
+                TempData["Error"] = "Aucune tournée prête pour verrouillage. Vérifie qu’au moins une tournée est en état PRETE_VERROUILLAGE.";
             }
         }
         catch (Exception ex)
