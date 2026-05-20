@@ -187,7 +187,9 @@ public sealed class ExpeditionController : Controller
                 return RedirectToAction(nameof(Tournees));
             }
 
-            ModelState.AddModelError(string.Empty, result.Message);
+            ModelState.AddModelError(
+                string.Empty,
+                result.Message ?? "Erreur inconnue pendant l'enregistrement du brouillon.");
             ReapplyInputValues(invalidModel, input);
             return View(invalidModel);
         }
@@ -369,7 +371,7 @@ public sealed class ExpeditionController : Controller
 
         if (!result.Success)
         {
-            TempData["Error"] = result.Message;
+            TempData["Error"] = result.Message ?? "Erreur inconnue pendant le marquage prêt pour verrouillage.";
             return RedirectToAction(nameof(Recapitulatif), new { codeTournee });
         }
 
@@ -629,4 +631,3 @@ public sealed class ExpeditionController : Controller
         public static SavePreparationResult Fail(string message) => new(false, message);
     }
 }
-
