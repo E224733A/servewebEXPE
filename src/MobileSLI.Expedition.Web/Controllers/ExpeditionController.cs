@@ -399,7 +399,11 @@ public sealed class ExpeditionController : Controller
             var requestedAtLocal = DateTimeOffset.Now;
             var lotSequence = $"DEV-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}";
 
-            var executed = await _verrouillageService.TryRunAsync(requestedAtLocal, lotSequence, cancellationToken);
+            var executed = await _verrouillageService.TryRunAsync(
+                requestedAtLocal,
+                lotSequence,
+                cancellationToken,
+                includeAlreadyLocked: true);
 
             if (executed)
             {
@@ -407,7 +411,7 @@ public sealed class ExpeditionController : Controller
             }
             else
             {
-                TempData["Error"] = "Aucun lot à verrouiller. Vérifie qu'une tournée est prête pour verrouillage et qu'elle n'est pas déjà verrouillée.";
+                TempData["Error"] = "Aucun lot n'a pu être construit. Vérifie que les données Expédition sont chargées et que la tournée existe encore dans le stockage local.";
             }
         }
         catch (Exception ex)

@@ -416,7 +416,11 @@ public sealed class SqliteExpeditionDraftStore : IExpeditionDraftStore
         return value is not null && value != DBNull.Value;
     }
 
-    public async Task<PreparedLockLot?> BuildLockLotAsync(DateTimeOffset requestedAtLocal, string lotSequence, CancellationToken cancellationToken)
+    public async Task<PreparedLockLot?> BuildLockLotAsync(
+        DateTimeOffset requestedAtLocal,
+        string lotSequence,
+        bool includeAlreadyLocked,
+        CancellationToken cancellationToken)
     {
         var load = await GetLastLoadedDataAsync(cancellationToken);
 
@@ -425,7 +429,7 @@ public sealed class SqliteExpeditionDraftStore : IExpeditionDraftStore
             return null;
         }
 
-        if (await HasSuccessfulLockAsync(load.DateTournee, cancellationToken))
+        if (!includeAlreadyLocked && await HasSuccessfulLockAsync(load.DateTournee, cancellationToken))
         {
             return null;
         }
@@ -438,7 +442,9 @@ public sealed class SqliteExpeditionDraftStore : IExpeditionDraftStore
         {
             SchemaVersion = string.IsNullOrWhiteSpace(load.SchemaVersion) ? "1.2" : load.SchemaVersion,
             IdLotVerrouillage = $"EXP-{load.DateTournee:yyyy-MM-dd}-{requestedAtLocal:HHmm}-{lotSequence}",
-            Source = "APPLICATION_WEB_EXPEDITION",
+            Source = includeAlreadyLocked
+                ? "APPLICATION_WEB_EXPEDITION_DEV_REVERROUILLAGE"
+                : "APPLICATION_WEB_EXPEDITION",
             DateTournee = load.DateTournee,
             DateVerrouillageDemandee = requestedAtLocal,
             FuseauHoraireMetier = fuseauHoraireMetier,
@@ -454,8 +460,15 @@ public sealed class SqliteExpeditionDraftStore : IExpeditionDraftStore
 
             var status = tourneeState?.Status ?? tournee.EtatPreparation;
             var isLocked = tournee.EstVerrouilleeBd || tourneeState?.IsLocked == true;
+            var isReadyForNormalLock = LockablePreparationStatuses.Contains(status);
+            var isEligibleForForcedLock = includeAlreadyLocked && IsAlreadyLockedStatus(status, isLocked);
 
-            if (isLocked || !LockablePreparationStatuses.Contains(status))
+            if (!isReadyForNormalLock && !isEligibleForForcedLock)
+            {
+                continue;
+            }
+
+            if (isLocked && !includeAlreadyLocked)
             {
                 continue;
             }
@@ -511,7 +524,7 @@ public sealed class SqliteExpeditionDraftStore : IExpeditionDraftStore
                     DerniereModification = new DerniereModificationDto
                     {
                         Date = lineState?.LastModifiedUtc ?? requestedAtLocal,
-                        Utilisateur = "EXPEDITION_WEB"
+                        Utilisateur = includeAlreadyLocked ? "EXPEDITION_WEB_DEV" : "EXPEDITION_WEB"
                     }
                 });
             }
@@ -520,7 +533,7 @@ public sealed class SqliteExpeditionDraftStore : IExpeditionDraftStore
             {
                 CodeTournee = tournee.CodeTournee,
                 LibelleTournee = tournee.LibelleTournee,
-                StatutPreparationWeb = status,
+                StatutPreparationWeb = isReadyForNormalLock ? status : "PRETE_VERROUILLAGE",
                 Lignes = lineDtos
             });
         }
@@ -766,6 +779,16 @@ public sealed class SqliteExpeditionDraftStore : IExpeditionDraftStore
         return string.Equals(codeArticle, "ROLLS", StringComparison.OrdinalIgnoreCase)
             || string.Equals(codeArticle, "TAPIS", StringComparison.OrdinalIgnoreCase)
             || string.Equals(codeArticle, "SACS", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsAlreadyLockedStatus(string? status, bool isLocked)
+    {
+        return isLocked
+            || string.Equals(status, "VERROUILLEE_BD", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(status, "VERROUILLEE", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(status, "ALREADY_LOCKED", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(status, "ALREADY_PROCESSED", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(status, "SUCCESS", StringComparison.OrdinalIgnoreCase);
     }
 
     private static DateTimeOffset ConvertUtcToBusinessOffset(DateTimeOffset utcDate, string? timeZoneId)

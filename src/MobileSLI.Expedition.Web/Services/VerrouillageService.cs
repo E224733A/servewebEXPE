@@ -23,12 +23,23 @@ public sealed class VerrouillageService
         _logger = logger;
     }
 
-    public async Task<bool> TryRunAsync(DateTimeOffset requestedAtLocal, string lotSequence, CancellationToken cancellationToken)
+    public async Task<bool> TryRunAsync(
+        DateTimeOffset requestedAtLocal,
+        string lotSequence,
+        CancellationToken cancellationToken,
+        bool includeAlreadyLocked = false)
     {
-        var lot = await _draftStore.BuildLockLotAsync(requestedAtLocal, lotSequence, cancellationToken);
+        var lot = await _draftStore.BuildLockLotAsync(
+            requestedAtLocal,
+            lotSequence,
+            includeAlreadyLocked,
+            cancellationToken);
+
         if (lot is null)
         {
-            _logger.LogDebug("Aucun lot Expédition à verrouiller.");
+            _logger.LogDebug(
+                "Aucun lot Expédition à verrouiller. IncludeAlreadyLocked={IncludeAlreadyLocked}.",
+                includeAlreadyLocked);
             return false;
         }
 
