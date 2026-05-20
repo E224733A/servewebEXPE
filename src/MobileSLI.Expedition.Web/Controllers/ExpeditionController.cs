@@ -356,7 +356,7 @@ public sealed class ExpeditionController : Controller
                 Quantites = l.Quantites.Select(q => new PreparationQuantiteInputModel
                 {
                     CodeArticle = q.Key,
-                    QuantiteLivreePrevue = q.Value ?? 0
+                    QuantiteLivreePrevue = q.Value
                 }).ToList()
             }).ToList()
         };
