@@ -403,7 +403,8 @@ public sealed class ExpeditionController : Controller
                 requestedAtLocal,
                 lotSequence,
                 cancellationToken,
-                includeAlreadyLocked: true);
+                includeAlreadyLocked: true,
+                codeTourneeFilter: codeTournee);
 
             if (executed)
             {
@@ -411,7 +412,7 @@ public sealed class ExpeditionController : Controller
             }
             else
             {
-                TempData["Error"] = "Aucun lot n'a pu être construit. Vérifie que les données Expédition sont chargées et que la tournée existe encore dans le stockage local.";
+                TempData["Error"] = "Aucun lot n'a pu être construit pour cette tournée. Vérifie que les données Expédition sont chargées et que la tournée existe encore dans le stockage local.";
             }
         }
         catch (Exception ex)

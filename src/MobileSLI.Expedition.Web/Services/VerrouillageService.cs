@@ -27,19 +27,22 @@ public sealed class VerrouillageService
         DateTimeOffset requestedAtLocal,
         string lotSequence,
         CancellationToken cancellationToken,
-        bool includeAlreadyLocked = false)
+        bool includeAlreadyLocked = false,
+        string? codeTourneeFilter = null)
     {
         var lot = await _draftStore.BuildLockLotAsync(
             requestedAtLocal,
             lotSequence,
             includeAlreadyLocked,
+            codeTourneeFilter,
             cancellationToken);
 
         if (lot is null)
         {
             _logger.LogDebug(
-                "Aucun lot Expédition à verrouiller. IncludeAlreadyLocked={IncludeAlreadyLocked}.",
-                includeAlreadyLocked);
+                "Aucun lot Expédition à verrouiller. IncludeAlreadyLocked={IncludeAlreadyLocked}, CodeTourneeFilter={CodeTourneeFilter}.",
+                includeAlreadyLocked,
+                codeTourneeFilter);
             return false;
         }
 

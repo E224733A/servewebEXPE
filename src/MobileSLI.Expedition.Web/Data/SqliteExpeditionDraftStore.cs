@@ -420,6 +420,7 @@ public sealed class SqliteExpeditionDraftStore : IExpeditionDraftStore
         DateTimeOffset requestedAtLocal,
         string lotSequence,
         bool includeAlreadyLocked,
+        string? codeTourneeFilter,
         CancellationToken cancellationToken)
     {
         var load = await GetLastLoadedDataAsync(cancellationToken);
@@ -456,12 +457,27 @@ public sealed class SqliteExpeditionDraftStore : IExpeditionDraftStore
 
         foreach (var tournee in load.Tournees.OrderBy(t => t.CodeTournee))
         {
+            if (!string.IsNullOrWhiteSpace(codeTourneeFilter)
+                && !string.Equals(tournee.CodeTournee, codeTourneeFilter, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
             tourneeStates.TryGetValue(tournee.CodeTournee, out var tourneeState);
 
             var status = tourneeState?.Status ?? tournee.EtatPreparation;
             var isLocked = tournee.EstVerrouilleeBd || tourneeState?.IsLocked == true;
             var isReadyForNormalLock = LockablePreparationStatuses.Contains(status);
-            var isEligibleForForcedLock = includeAlreadyLocked && IsAlreadyLockedStatus(status, isLocked);
+
+            // En mode normal, on conserve le comportement strict : uniquement les tournées prêtes et non verrouillées.
+            // En mode développement forcé, le bouton agit sur la tournée affichée et peut reconstruire un lot
+            // même si elle est déjà verrouillée ou si l'état local n'est plus PRETE_VERROUILLAGE.
+            var isRequestedTourneeForForcedLock = includeAlreadyLocked
+                && !string.IsNullOrWhiteSpace(codeTourneeFilter)
+                && string.Equals(tournee.CodeTournee, codeTourneeFilter, StringComparison.OrdinalIgnoreCase);
+
+            var isEligibleForForcedLock = includeAlreadyLocked
+                && (isRequestedTourneeForForcedLock || isReadyForNormalLock || IsAlreadyLockedStatus(status, isLocked));
 
             if (!isReadyForNormalLock && !isEligibleForForcedLock)
             {

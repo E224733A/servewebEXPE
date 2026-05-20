@@ -18,7 +18,12 @@ public interface IExpeditionDraftStore
 
     Task SavePreparationAsync(DateOnly dateTournee, string codeTournee, IReadOnlyList<SavePreparationLineDraft> lignes, string status, string? modifiedBy, CancellationToken cancellationToken);
 
-    Task<PreparedLockLot?> BuildLockLotAsync(DateTimeOffset requestedAtLocal, string lotSequence, bool includeAlreadyLocked, CancellationToken cancellationToken);
+    Task<PreparedLockLot?> BuildLockLotAsync(
+        DateTimeOffset requestedAtLocal,
+        string lotSequence,
+        bool includeAlreadyLocked,
+        string? codeTourneeFilter,
+        CancellationToken cancellationToken);
 
     Task<bool> HasSuccessfulLockAsync(DateOnly dateTournee, CancellationToken cancellationToken);
 
