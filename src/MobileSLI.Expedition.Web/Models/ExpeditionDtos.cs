@@ -202,6 +202,8 @@ public sealed class ExpeditionLockResponse
 {
     public string Statut { get; set; } = "SUCCESS";
 
+    public string? Code { get; set; }
+
     public string? Message { get; set; }
 
     public string IdLotVerrouillage { get; set; } = string.Empty;
@@ -210,7 +212,7 @@ public sealed class ExpeditionLockResponse
 
     public string StatutVerrouillage { get; set; } = "VERROUILLEE_BD";
 
-    public DateTimeOffset DateReceptionApi { get; set; }
+    public DateTimeOffset? DateReceptionApi { get; set; }
 
     public DateTimeOffset? DateSauvegardeSql { get; set; }
 

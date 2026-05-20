@@ -25,11 +25,17 @@ public sealed class VerrouillageService
 
     public async Task<bool> TryRunAsync(DateTimeOffset requestedAtLocal, string lotSequence, CancellationToken cancellationToken)
     {
+        var result = await TryRunDetailedAsync(requestedAtLocal, lotSequence, cancellationToken);
+        return result.IsSuccess;
+    }
+
+    public async Task<VerrouillageRunResult> TryRunDetailedAsync(DateTimeOffset requestedAtLocal, string lotSequence, CancellationToken cancellationToken)
+    {
         var lot = await _draftStore.BuildLockLotAsync(requestedAtLocal, lotSequence, cancellationToken);
         if (lot is null)
         {
             _logger.LogDebug("Aucune tournée PRETE_VERROUILLAGE à verrouiller dans le stockage Expédition.");
-            return false;
+            return VerrouillageRunResult.NoLot();
         }
 
         try
@@ -44,7 +50,9 @@ public sealed class VerrouillageService
             if (SuccessStatuses.Contains(response.Statut))
             {
                 await _draftStore.MarkLockSuccessAsync(response, lot.PayloadHash, cancellationToken);
-                return true;
+
+                return VerrouillageRunResult.Success(
+                    $"Verrouillage exécuté pour {lot.Request.Tournees.Count} tournée(s) PRETE_VERROUILLAGE. Vérifie l'historique et la base SQL Server.");
             }
 
             await _draftStore.MarkLockFailureAsync(
@@ -55,20 +63,27 @@ public sealed class VerrouillageService
                 lot.PayloadHash,
                 cancellationToken);
 
-            return false;
+            return VerrouillageRunResult.Failed(
+                response.Message ?? "Verrouillage refusé par l'API centrale.");
         }
         catch (ExpeditionApiException ex)
         {
             await _draftStore.MarkLockFailureAsync(
                 lot.Request.IdLotVerrouillage,
                 lot.Request.DateTournee,
-                ex.ApiStatus ?? "TECHNICAL_ERROR",
+                ex.ApiStatus ?? "API_ERROR",
                 ex.Message,
                 lot.PayloadHash,
                 cancellationToken);
 
-            _logger.LogError(ex, "Erreur API pendant le verrouillage Expédition du lot {IdLot}.", lot.Request.IdLotVerrouillage);
-            return false;
+            _logger.LogError(
+                ex,
+                "Erreur API pendant le verrouillage Expédition du lot {IdLot}. Réponse API : {ResponseBody}",
+                lot.Request.IdLotVerrouillage,
+                ex.ResponseBody);
+
+            return VerrouillageRunResult.Failed(
+                $"API centrale ({ex.StatusCode}) : {ex.Message}");
         }
         catch (Exception ex)
         {
@@ -81,7 +96,27 @@ public sealed class VerrouillageService
                 cancellationToken);
 
             _logger.LogError(ex, "Erreur technique pendant le verrouillage Expédition du lot {IdLot}.", lot.Request.IdLotVerrouillage);
-            return false;
+
+            return VerrouillageRunResult.Failed(
+                $"Erreur technique pendant le verrouillage : {ex.Message}");
         }
     }
+}
+
+public sealed record VerrouillageRunResult(
+    bool IsSuccess,
+    bool LotBuilt,
+    string Message)
+{
+    public static VerrouillageRunResult NoLot() =>
+        new(
+            false,
+            false,
+            "Aucune tournée prête pour verrouillage. Vérifie qu’au moins une tournée est en état PRETE_VERROUILLAGE.");
+
+    public static VerrouillageRunResult Success(string message) =>
+        new(true, true, message);
+
+    public static VerrouillageRunResult Failed(string message) =>
+        new(false, true, message);
 }

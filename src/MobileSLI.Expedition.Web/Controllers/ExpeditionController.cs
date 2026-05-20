@@ -399,21 +399,21 @@ public sealed class ExpeditionController : Controller
             var requestedAtLocal = DateTimeOffset.Now;
             var lotSequence = $"DEV-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}";
 
-            var executed = await _verrouillageService.TryRunAsync(requestedAtLocal, lotSequence, cancellationToken);
+            var result = await _verrouillageService.TryRunDetailedAsync(requestedAtLocal, lotSequence, cancellationToken);
 
-            if (executed)
+            if (result.IsSuccess)
             {
-                TempData["Success"] = "Verrouillage manuel de développement exécuté pour toutes les tournées PRETE_VERROUILLAGE. Vérifie l'historique et la base SQL Server.";
+                TempData["Success"] = result.Message;
             }
             else
             {
-                TempData["Error"] = "Aucune tournée prête pour verrouillage. Vérifie qu’au moins une tournée est en état PRETE_VERROUILLAGE.";
+                TempData["Error"] = result.Message;
             }
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Erreur pendant le verrouillage manuel de développement.");
-            TempData["Error"] = "Erreur technique pendant le verrouillage manuel de développement.";
+            TempData["Error"] = $"Erreur technique pendant le verrouillage manuel de développement : {ex.Message}";
         }
 
         return RedirectToAction(nameof(Recapitulatif), new { codeTournee });

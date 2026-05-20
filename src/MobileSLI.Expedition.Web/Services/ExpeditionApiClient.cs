@@ -61,11 +61,29 @@ public sealed class ExpeditionApiClient : IExpeditionApiClient
         using var response = await _httpClient.PostAsJsonAsync("api/expedition/preparations/verrouiller", request, JsonDefaults.Options, cancellationToken);
         var content = await response.Content.ReadAsStringAsync(cancellationToken);
 
-        var result = JsonSerializer.Deserialize<ExpeditionLockResponse>(content, JsonDefaults.Options);
-
-        if (!response.IsSuccessStatusCode && result is null)
+        if (!response.IsSuccessStatusCode)
         {
-            throw new ExpeditionApiException("Le verrouillage Expédition a échoué.", (int)response.StatusCode, content);
+            var apiError = TryReadApiError(content);
+            var message = BuildApiErrorMessage(apiError, "Le verrouillage Expédition a été refusé par l'API.");
+
+            throw new ExpeditionApiException(
+                message,
+                (int)response.StatusCode,
+                content,
+                apiError.Code ?? apiError.Statut);
+        }
+
+        ExpeditionLockResponse? result;
+        try
+        {
+            result = JsonSerializer.Deserialize<ExpeditionLockResponse>(content, JsonDefaults.Options);
+        }
+        catch (JsonException ex)
+        {
+            throw new ExpeditionApiException(
+                $"La réponse de verrouillage Expédition est invalide : {ex.Message}",
+                (int)response.StatusCode,
+                content);
         }
 
         if (result is null)
@@ -73,9 +91,13 @@ public sealed class ExpeditionApiClient : IExpeditionApiClient
             throw new ExpeditionApiException("La réponse de verrouillage Expédition est vide ou invalide.", (int)response.StatusCode, content);
         }
 
-        if (!response.IsSuccessStatusCode)
+        if (!string.Equals(result.Statut, "SUCCESS", StringComparison.OrdinalIgnoreCase))
         {
-            throw new ExpeditionApiException(result.Message ?? "Le verrouillage Expédition a été refusé par l'API.", (int)response.StatusCode, content, result.Statut);
+            throw new ExpeditionApiException(
+                result.Message ?? "Le verrouillage Expédition a été refusé par l'API.",
+                (int)response.StatusCode,
+                content,
+                result.Code ?? result.Statut);
         }
 
         _logger.LogInformation("Réponse verrouillage Expédition réel : {Statut} lot {IdLot}", result.Statut, result.IdLotVerrouillage);
@@ -94,6 +116,65 @@ public sealed class ExpeditionApiClient : IExpeditionApiClient
             _logger.LogWarning(ex, "Erreur pendant le test de santé de l'API centrale.");
             return false;
         }
+    }
+
+    private static ExpeditionApiErrorBody TryReadApiError(string content)
+    {
+        if (string.IsNullOrWhiteSpace(content))
+        {
+            return new ExpeditionApiErrorBody();
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<ExpeditionApiErrorBody>(content, JsonDefaults.Options)
+                ?? new ExpeditionApiErrorBody();
+        }
+        catch (JsonException)
+        {
+            return new ExpeditionApiErrorBody
+            {
+                Message = content
+            };
+        }
+    }
+
+    private static string BuildApiErrorMessage(ExpeditionApiErrorBody apiError, string fallback)
+    {
+        var parts = new List<string>();
+
+        if (!string.IsNullOrWhiteSpace(apiError.Message))
+        {
+            parts.Add(apiError.Message.Trim());
+        }
+
+        if (apiError.Errors is not null && apiError.Errors.Count > 0)
+        {
+            parts.Add(string.Join(" ", apiError.Errors.Where(error => !string.IsNullOrWhiteSpace(error))));
+        }
+
+        if (parts.Count == 0)
+        {
+            parts.Add(fallback);
+        }
+
+        if (!string.IsNullOrWhiteSpace(apiError.Code))
+        {
+            parts.Add($"Code API : {apiError.Code}.");
+        }
+
+        return string.Join(" ", parts);
+    }
+
+    private sealed class ExpeditionApiErrorBody
+    {
+        public string? Statut { get; set; }
+
+        public string? Code { get; set; }
+
+        public string? Message { get; set; }
+
+        public List<string>? Errors { get; set; }
     }
 }
 
