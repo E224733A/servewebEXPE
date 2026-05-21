@@ -25,11 +25,20 @@ public sealed class VerrouillageService
 
     public async Task<bool> TryRunAsync(DateTimeOffset requestedAtLocal, string lotSequence, CancellationToken cancellationToken)
     {
-        var result = await TryRunDetailedAsync(requestedAtLocal, lotSequence, cancellationToken);
+        var result = await TryRunDetailedAsync(
+            requestedAtLocal,
+            lotSequence,
+            cancellationToken,
+            ignorerVerrouillageDejaReussi: false);
+
         return result.IsSuccess;
     }
 
-    public async Task<VerrouillageRunResult> TryRunDetailedAsync(DateTimeOffset requestedAtLocal, string lotSequence, CancellationToken cancellationToken)
+    public async Task<VerrouillageRunResult> TryRunDetailedAsync(
+        DateTimeOffset requestedAtLocal,
+        string lotSequence,
+        CancellationToken cancellationToken,
+        bool ignorerVerrouillageDejaReussi = false)
     {
         var lot = await _draftStore.BuildLockLotAsync(requestedAtLocal, lotSequence, cancellationToken);
         if (lot is null)
@@ -38,10 +47,11 @@ public sealed class VerrouillageService
             return VerrouillageRunResult.NoLot();
         }
 
-        if (await _draftStore.HasSuccessfulLockAsync(lot.Request.DateTournee, cancellationToken))
+        if (!ignorerVerrouillageDejaReussi
+            && await _draftStore.HasSuccessfulLockAsync(lot.Request.DateTournee, cancellationToken))
         {
             _logger.LogInformation(
-                "Verrouillage Expédition ignoré : un verrouillage réussi existe déjà pour la date {DateTournee}.",
+                "Verrouillage Expédition automatique ignoré : un verrouillage réussi existe déjà pour la date {DateTournee}.",
                 lot.Request.DateTournee);
 
             return VerrouillageRunResult.Success(
