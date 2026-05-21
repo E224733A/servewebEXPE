@@ -1,13 +1,13 @@
-Scripts IIS SERVWEB - version corrigee v4
+Scripts IIS SERVWEB - version corrigee v5
 
 Corrections appliquees :
 1. Correction icacls AppPool identity.
 2. Correction web.config sous configuration/location/system.webServer.
-3. Correction PID 4 / System :
-   - avec IIS, le port HTTP peut etre possede par HTTP.sys, visible comme PID 4 System ;
-   - c'est normal ;
-   - le script ne tente plus de faire Stop-Process sur PID 4 ;
-   - IIS est gere proprement par Stop-Website et Stop-WebAppPool.
+3. Correction PID 4 / System HTTP.sys.
+4. Correction AppPool deja arrete :
+   - l'ancien script appelait Stop-WebAppPool meme si l'AppPool etait deja arrete ;
+   - la v5 verifie l'etat du site et de l'AppPool avant Stop/Start ;
+   - un AppPool deja arrete est maintenant considere normal.
 
 Contexte :
 - SERVWEB = 192.168.1.232

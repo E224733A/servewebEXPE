@@ -1,7 +1,7 @@
 #requires -RunAsAdministrator
 <#
 MISE A JOUR SERVWEB IIS
-Version corrigee v4 : correction icacls + web.config sous location/system.webServer + PID 4 HTTP.sys
+Version corrigee v5 : correction icacls + web.config sous location/system.webServer + PID 4 HTTP.sys + AppPool deja arrete
 A executer apres chaque modification Git / nouvelle version.
 
 Pre-requis :
@@ -261,13 +261,56 @@ function Grant-AppPoolPermissions {
 function Restart-IisSite {
     Write-Step "Redemarrage IIS"
 
-    Stop-Website -Name $SiteName -ErrorAction SilentlyContinue
-    Stop-WebAppPool -Name $AppPoolName -ErrorAction SilentlyContinue
+    $site = Get-Website -Name $SiteName -ErrorAction SilentlyContinue
+    if (-not $site) {
+        throw "Site IIS introuvable : $SiteName"
+    }
+
+    $appPoolState = $null
+    try {
+        $appPoolState = (Get-WebAppPoolState -Name $AppPoolName -ErrorAction Stop).Value
+    }
+    catch {
+        throw "AppPool IIS introuvable : $AppPoolName"
+    }
+
+    if ($site.State -eq "Started") {
+        Write-Host "Arret du site IIS : $SiteName"
+        Stop-Website -Name $SiteName
+    }
+    else {
+        Write-Host "Site IIS deja arrete : $SiteName"
+    }
+
+    if ($appPoolState -eq "Started") {
+        Write-Host "Arret de l'AppPool : $AppPoolName"
+        Stop-WebAppPool -Name $AppPoolName
+    }
+    else {
+        Write-Host "AppPool deja arrete : $AppPoolName"
+    }
 
     Start-Sleep -Seconds 2
 
-    Start-WebAppPool -Name $AppPoolName
-    Start-Website -Name $SiteName
+    $appPoolState = (Get-WebAppPoolState -Name $AppPoolName).Value
+
+    if ($appPoolState -ne "Started") {
+        Write-Host "Demarrage de l'AppPool : $AppPoolName"
+        Start-WebAppPool -Name $AppPoolName
+    }
+    else {
+        Write-Host "AppPool deja demarre : $AppPoolName"
+    }
+
+    $site = Get-Website -Name $SiteName
+
+    if ($site.State -ne "Started") {
+        Write-Host "Demarrage du site IIS : $SiteName"
+        Start-Website -Name $SiteName
+    }
+    else {
+        Write-Host "Site IIS deja demarre : $SiteName"
+    }
 
     Start-Sleep -Seconds 5
 }
