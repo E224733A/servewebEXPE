@@ -1,7 +1,7 @@
 #requires -RunAsAdministrator
 <#
 CONFIGURATION IIS INITIALE - SERVWEB
-Version corrigee v3 : correction icacls + web.config sous location/system.webServer
+Version corrigee v4 : correction icacls + web.config sous location/system.webServer + PID 4 HTTP.sys
 A executer une seule fois sur SERVWEB en PowerShell administrateur.
 
 Contexte :
@@ -186,7 +186,7 @@ puis redemarre la VM et relance ce script.
 function Stop-PortProcessIfNeeded {
     param([int]$Port)
 
-    Write-Step "Liberation du port $Port si necessaire"
+    Write-Step "Controle du port $Port"
 
     $listeners = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
 
@@ -201,9 +201,21 @@ function Stop-PortProcessIfNeeded {
             continue
         }
 
-        Write-Host "Processus detecte sur le port $Port : PID $pidToStop ($($proc.ProcessName))" -ForegroundColor Yellow
+        # Avec IIS, le port HTTP est souvent possede par HTTP.sys, visible comme PID 4 / System.
+        # C'est normal : il ne faut jamais tenter d'arreter System.
+        # L'arret propre se fait avec Stop-Website et Stop-WebAppPool.
+        if ($pidToStop -eq 4 -or $proc.ProcessName -eq "System") {
+            Write-Host "Port $Port possede par HTTP.sys / IIS : PID 4 (System). C'est normal, aucune action Stop-Process." -ForegroundColor Yellow
+            continue
+        }
 
-        # On libere le port reserve a cette application.
+        # Si c'est w3wp, c'est le worker IIS. Il sera gere par Stop-Website / Stop-WebAppPool.
+        if ($proc.ProcessName -eq "w3wp") {
+            Write-Host "Port $Port utilise par IIS worker w3wp. Il sera gere par Stop-Website / Stop-WebAppPool." -ForegroundColor Yellow
+            continue
+        }
+
+        Write-Host "Processus non-IIS detecte sur le port $Port : PID $pidToStop ($($proc.ProcessName)). Arret." -ForegroundColor Yellow
         Stop-Process -Id $pidToStop -Force
         Start-Sleep -Seconds 2
     }

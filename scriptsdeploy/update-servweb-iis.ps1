@@ -1,7 +1,7 @@
 #requires -RunAsAdministrator
 <#
 MISE A JOUR SERVWEB IIS
-Version corrigee v3 : correction icacls + web.config sous location/system.webServer
+Version corrigee v4 : correction icacls + web.config sous location/system.webServer + PID 4 HTTP.sys
 A executer apres chaque modification Git / nouvelle version.
 
 Pre-requis :
@@ -96,8 +96,17 @@ function Stop-PortProcessIfNeeded {
             continue
         }
 
-        # Si c'est w3wp, le Stop-Website / Stop-WebAppPool suffit.
+        # Avec IIS, le port HTTP est souvent possede par HTTP.sys, visible comme PID 4 / System.
+        # C'est normal : il ne faut jamais tenter d'arreter System.
+        # L'arret propre se fait avec Stop-Website et Stop-WebAppPool.
+        if ($pidToStop -eq 4 -or $proc.ProcessName -eq "System") {
+            Write-Host "Port $Port possede par HTTP.sys / IIS : PID 4 (System). C'est normal, aucune action Stop-Process." -ForegroundColor Yellow
+            continue
+        }
+
+        # Si c'est w3wp, c'est le worker IIS. Il sera gere par Stop-Website / Stop-WebAppPool.
         if ($proc.ProcessName -eq "w3wp") {
+            Write-Host "Port $Port utilise par IIS worker w3wp. Il sera gere par Stop-Website / Stop-WebAppPool." -ForegroundColor Yellow
             continue
         }
 
