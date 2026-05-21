@@ -1,7 +1,7 @@
 #requires -RunAsAdministrator
 <#
 MISE A JOUR SERVWEB IIS
-Version corrigee v5 : correction icacls + web.config sous location/system.webServer + PID 4 HTTP.sys + AppPool deja arrete
+Version corrigee v6 : correction arret AppPool direct dans update + corrections precedentes
 A executer apres chaque modification Git / nouvelle version.
 
 Pre-requis :
@@ -361,8 +361,37 @@ $env:ExpeditionApi__BaseUrl = $ApiBaseUrl
 
 Stop-PortProcessIfNeeded -Port $WebPort
 Publish-Application
-Stop-Website -Name $SiteName -ErrorAction SilentlyContinue
-Stop-WebAppPool -Name $AppPoolName -ErrorAction SilentlyContinue
+
+# Arret propre avant sauvegarde/deploiement.
+# Ne jamais appeler Stop-WebAppPool directement ici :
+# si l'AppPool est deja arrete, PowerShell peut lever une erreur bloquante.
+$site = Get-Website -Name $SiteName -ErrorAction SilentlyContinue
+if ($site -and $site.State -eq "Started") {
+    Write-Host "Arret du site IIS avant deploiement : $SiteName" -ForegroundColor Yellow
+    Stop-Website -Name $SiteName
+}
+else {
+    Write-Host "Site IIS deja arrete avant deploiement : $SiteName" -ForegroundColor Yellow
+}
+
+$appPoolState = $null
+try {
+    $appPoolState = (Get-WebAppPoolState -Name $AppPoolName -ErrorAction Stop).Value
+}
+catch {
+    throw "AppPool IIS introuvable : $AppPoolName"
+}
+
+if ($appPoolState -eq "Started") {
+    Write-Host "Arret de l'AppPool avant deploiement : $AppPoolName" -ForegroundColor Yellow
+    Stop-WebAppPool -Name $AppPoolName
+}
+else {
+    Write-Host "AppPool deja arrete avant deploiement : $AppPoolName" -ForegroundColor Yellow
+}
+
+Start-Sleep -Seconds 2
+
 Backup-CurrentDeployment
 Deploy-PublishedFiles
 Ensure-WebConfigEnvironment -WebConfigPath (Join-Path $DeployPath "web.config")

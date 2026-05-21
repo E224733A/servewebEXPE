@@ -1,12 +1,13 @@
-Scripts IIS SERVWEB - version corrigee v5
+Scripts IIS SERVWEB - version corrigee v6
 
 Corrections appliquees :
 1. Correction icacls AppPool identity.
 2. Correction web.config sous configuration/location/system.webServer.
 3. Correction PID 4 / System HTTP.sys.
-4. Correction AppPool deja arrete :
-   - l'ancien script appelait Stop-WebAppPool meme si l'AppPool etait deja arrete ;
-   - la v5 verifie l'etat du site et de l'AppPool avant Stop/Start ;
+4. Correction AppPool deja arrete dans Restart-IisSite.
+5. Correction supplementaire update-servweb-iis.ps1 :
+   - suppression du Stop-WebAppPool direct dans le corps principal ;
+   - verification de l'etat de l'AppPool avant tentative d'arret ;
    - un AppPool deja arrete est maintenant considere normal.
 
 Contexte :
