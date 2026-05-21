@@ -399,7 +399,11 @@ public sealed class ExpeditionController : Controller
             var requestedAtLocal = DateTimeOffset.Now;
             var lotSequence = $"DEV-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}";
 
-            var result = await _verrouillageService.TryRunDetailedAsync(requestedAtLocal, lotSequence, cancellationToken);
+            var result = await _verrouillageService.TryRunDetailedAsync(
+                requestedAtLocal,
+                lotSequence,
+                cancellationToken,
+                ignorerVerrouillageDejaReussi: true);
 
             if (result.IsSuccess)
             {
