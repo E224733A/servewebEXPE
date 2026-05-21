@@ -1,7 +1,7 @@
 #requires -RunAsAdministrator
 <#
 MISE A JOUR SERVWEB IIS
-Version corrigee : correction icacls AppPool identity
+Version corrigee v3 : correction icacls + web.config sous location/system.webServer
 A executer apres chaque modification Git / nouvelle version.
 
 Pre-requis :
@@ -137,13 +137,26 @@ function Ensure-WebConfigEnvironment {
 
     [xml]$webConfig = Get-Content $WebConfigPath
 
+    # Selon le publish ASP.NET Core, system.webServer peut etre :
+    # 1) directement sous <configuration>
+    # 2) sous <configuration><location path="." inheritInChildApplications="false">
     $systemWebServer = $webConfig.configuration.'system.webServer'
+
+    if (-not $systemWebServer -and $webConfig.configuration.location) {
+        $systemWebServer = $webConfig.configuration.location.'system.webServer'
+    }
+
     if (-not $systemWebServer) {
-        throw "web.config invalide : section system.webServer introuvable."
+        Write-Host "Contenu actuel de web.config :" -ForegroundColor Yellow
+        Get-Content $WebConfigPath | Out-Host
+        throw "web.config invalide : section system.webServer introuvable, meme sous configuration/location."
     }
 
     $aspNetCoreNode = $systemWebServer.aspNetCore
+
     if (-not $aspNetCoreNode) {
+        Write-Host "Contenu actuel de web.config :" -ForegroundColor Yellow
+        Get-Content $WebConfigPath | Out-Host
         throw "web.config invalide : noeud aspNetCore introuvable."
     }
 
@@ -167,6 +180,9 @@ function Ensure-WebConfigEnvironment {
         -Value $ApiBaseUrl
 
     $webConfig.Save($WebConfigPath)
+
+    Write-Host "ASPNETCORE_ENVIRONMENT = $AspNetCoreEnvironment"
+    Write-Host "ExpeditionApi__BaseUrl = $ApiBaseUrl"
 }
 
 function Publish-Application {

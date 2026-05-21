@@ -1,7 +1,7 @@
 #requires -RunAsAdministrator
 <#
 CONFIGURATION IIS INITIALE - SERVWEB
-Version corrigee : correction icacls AppPool identity
+Version corrigee v3 : correction icacls + web.config sous location/system.webServer
 A executer une seule fois sur SERVWEB en PowerShell administrateur.
 
 Contexte :
@@ -241,13 +241,27 @@ function Ensure-WebConfigEnvironment {
 
     [xml]$webConfig = Get-Content $WebConfigPath
 
+    # Selon le publish ASP.NET Core, system.webServer peut etre :
+    # 1) directement sous <configuration>
+    # 2) sous <configuration><location path="." inheritInChildApplications="false">
+    # Le web.config genere par Microsoft.NET.Sdk.Web utilise souvent le cas 2.
     $systemWebServer = $webConfig.configuration.'system.webServer'
+
+    if (-not $systemWebServer -and $webConfig.configuration.location) {
+        $systemWebServer = $webConfig.configuration.location.'system.webServer'
+    }
+
     if (-not $systemWebServer) {
-        throw "web.config invalide : section system.webServer introuvable."
+        Write-Host "Contenu actuel de web.config :" -ForegroundColor Yellow
+        Get-Content $WebConfigPath | Out-Host
+        throw "web.config invalide : section system.webServer introuvable, meme sous configuration/location."
     }
 
     $aspNetCoreNode = $systemWebServer.aspNetCore
+
     if (-not $aspNetCoreNode) {
+        Write-Host "Contenu actuel de web.config :" -ForegroundColor Yellow
+        Get-Content $WebConfigPath | Out-Host
         throw "web.config invalide : noeud aspNetCore introuvable. Verifie que dotnet publish a bien genere une application ASP.NET Core."
     }
 
