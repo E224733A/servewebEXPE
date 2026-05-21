@@ -1,6 +1,7 @@
 #requires -RunAsAdministrator
 <#
 CONFIGURATION IIS INITIALE - SERVWEB
+Version corrigee : correction icacls AppPool identity
 A executer une seule fois sur SERVWEB en PowerShell administrateur.
 
 Contexte :
@@ -370,8 +371,10 @@ function Grant-AppPoolPermissions {
     New-Item -ItemType Directory -Path $dataPath -Force | Out-Null
     New-Item -ItemType Directory -Path $logsPath -Force | Out-Null
 
-    icacls $dataPath /grant "IIS AppPool\$AppPoolName:(OI)(CI)M" /T | Out-Host
-    icacls $logsPath /grant "IIS AppPool\$AppPoolName:(OI)(CI)M" /T | Out-Host
+    $appPoolIdentity = "IIS AppPool\${AppPoolName}"
+
+    icacls $dataPath /grant "${appPoolIdentity}:(OI)(CI)M" /T | Out-Host
+    icacls $logsPath /grant "${appPoolIdentity}:(OI)(CI)M" /T | Out-Host
 }
 
 function Restart-IisSite {

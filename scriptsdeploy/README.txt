@@ -1,45 +1,22 @@
-# Scripts IIS SERVWEB
+Scripts IIS SERVWEB - version corrigee
 
-## Contexte
+Correction appliquee :
+- remplacement de "IIS AppPool\$AppPoolName:(OI)(CI)M"
+- par une variable intermediaire $appPoolIdentity
+- puis usage de "${appPoolIdentity}:(OI)(CI)M"
 
-- SERVWEB = 192.168.1.232
-- Port web SERVWEB = 5100
-- API = 192.168.1.233:5000
-- BaseUrl API = http://192.168.1.233:5000/
-- Depot Git = C:\Sources\servewebEXPE
-- Securite reseau principale = pare-feu Windows / IIS
+Pourquoi :
+PowerShell interprete "$AppPoolName:" comme une reference de variable invalide.
+La version corrigee evite cette erreur de parsing.
 
-## Pourquoi ces scripts
+Execution :
+1. Copier les scripts dans C:\Sources\servewebEXPE\scriptsdeploy
+2. Ouvrir PowerShell en administrateur
+3. Executer :
 
-Il ne faut pas coller les blocs PowerShell morceau par morceau dans la console.
-Sinon PowerShell execute le `if` avant que le `else` soit colle, ce qui provoque l'erreur :
-
-else : Le terme «else» n'est pas reconnu
-
-Il faut enregistrer les scripts en `.ps1`, puis les executer.
-
-## Ordre d'execution
-
-1. Ouvrir PowerShell en administrateur.
-2. Autoriser l'execution pour la session courante :
-
-```powershell
 Set-ExecutionPolicy -Scope Process Bypass -Force
-```
-
-3. Lancer la configuration initiale :
-
-```powershell
+cd C:\Sources\servewebEXPE\scriptsdeploy
 .\setup-servweb-iis.ps1
-```
 
-Si le script demande de redemarrer ou si WebAdministration reste indisponible :
-- redemarrer SERVWEB ;
-- rouvrir PowerShell en administrateur ;
-- relancer `setup-servweb-iis.ps1`.
-
-4. Pour les mises a jour suivantes :
-
-```powershell
+Pour les mises a jour futures :
 .\update-servweb-iis.ps1
-```
