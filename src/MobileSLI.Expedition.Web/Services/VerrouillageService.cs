@@ -38,6 +38,16 @@ public sealed class VerrouillageService
             return VerrouillageRunResult.NoLot();
         }
 
+        if (await _draftStore.HasSuccessfulLockAsync(lot.Request.DateTournee, cancellationToken))
+        {
+            _logger.LogInformation(
+                "Verrouillage Expédition ignoré : un verrouillage réussi existe déjà pour la date {DateTournee}.",
+                lot.Request.DateTournee);
+
+            return VerrouillageRunResult.Success(
+                $"Verrouillage déjà effectué pour la date {lot.Request.DateTournee:dd/MM/yyyy}. Aucun nouvel appel API n'a été envoyé.");
+        }
+
         try
         {
             _logger.LogInformation(

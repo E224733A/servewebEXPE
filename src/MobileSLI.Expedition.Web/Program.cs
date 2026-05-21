@@ -59,6 +59,8 @@ app.Use(async (context, next) =>
             return;
         }
 
+        // Filtrage applicatif volontairement léger.
+        // La restriction réseau principale doit être faite au pare-feu Windows / IIS.
         if (access.AllowedIpPrefixes.Count > 0 && !IsAllowedRemoteAddress(context, access.AllowedIpPrefixes))
         {
             context.Response.StatusCode = StatusCodes.Status403Forbidden;
@@ -112,6 +114,7 @@ static void ValidateRuntimeConfiguration(WebApplication app)
 static void ApplySecurityHeaders(HttpContext context)
 {
     var headers = context.Response.Headers;
+
     headers["X-Content-Type-Options"] = "nosniff";
     headers["X-Frame-Options"] = "DENY";
     headers["Referrer-Policy"] = "no-referrer";
@@ -128,7 +131,13 @@ static bool IsMobileUserAgent(string userAgent)
 
     var mobileMarkers = new[]
     {
-        "Android", "iPhone", "iPad", "iPod", "Windows Phone", "Mobile", "Mobi"
+        "Android",
+        "iPhone",
+        "iPad",
+        "iPod",
+        "Windows Phone",
+        "Mobile",
+        "Mobi"
     };
 
     return mobileMarkers.Any(marker => userAgent.Contains(marker, StringComparison.OrdinalIgnoreCase));
@@ -143,5 +152,6 @@ static bool IsAllowedRemoteAddress(HttpContext context, IReadOnlyList<string> al
     }
 
     return allowedIpPrefixes.Any(prefix =>
-        !string.IsNullOrWhiteSpace(prefix) && remoteIp.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
+        !string.IsNullOrWhiteSpace(prefix)
+        && remoteIp.StartsWith(prefix.Trim(), StringComparison.OrdinalIgnoreCase));
 }

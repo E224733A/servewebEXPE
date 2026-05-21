@@ -12,7 +12,8 @@ public sealed class AccessControlOptions
 
     public bool RequireIpAllowListInProduction { get; set; } = false;
 
+    // Filtrage applicatif léger uniquement.
+    // Le vrai filtrage réseau doit être fait au pare-feu Windows / IIS.
     // Exemple : ["192.168.1.", "10.0.0.", "127.0.0.1", "::1"]
-    // Le filtrage définitif peut aussi être fait au pare-feu/IIS/reverse proxy.
     public List<string> AllowedIpPrefixes { get; set; } = [];
 }

@@ -50,16 +50,16 @@
     <div class="alert alert-info">Cette tournée est verrouillée en BD. La consultation reste possible, mais les champs sont en lecture seule.</div>
 }
 
-<form asp-action="Preparer" 
-      asp-route-codeTournee="@Model.CodeTournee" 
-      method="post" 
+<form asp-action="Preparer"
+      asp-route-codeTournee="@Model.CodeTournee"
+      method="post"
       data-loading-form>
     @Html.AntiForgeryToken()
 
     <section class="panel panel-table">
         <div class="section-header compact">
             <h2>Lignes de tournée</h2>
-            <span class="badge badge-soft">Saisie locale · pas de POST API central</span>
+            <span class="badge badge-soft">Saisie locale · sauvegarde au bouton uniquement</span>
         </div>
 
         <div class="table-wrapper">
@@ -102,10 +102,6 @@
                                         name="Lignes[@i].Quantites[@j].QuantiteLivreePrevue"
                                         value="@(value.HasValue ? value.Value.ToString() : string.Empty)"
                                         placeholder="—"
-                                        data-line-id="@ligne.IdLigneSource"
-                                        data-article-code="@article.CodeArticle"
-                                        data-code-tournee="@Model.CodeTournee"
-                                        onchange="updateQuantitePrevue(this)"
                                         @(Model.IsReadOnly ? "readonly" : string.Empty) />
                                 </td>
                             }
@@ -146,4 +142,3 @@
         </section>
     }
 </form>
-
