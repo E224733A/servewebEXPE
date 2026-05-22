@@ -19,6 +19,9 @@ namespace MobileSLI.Expedition.Web.Data;
 public sealed class SqliteExpeditionDraftStore : IExpeditionDraftStore
 {
     private const string StatusReadyForLock = DraftStatuses.PretVerrouillage;
+    private const string ApiSource = "APPLICATION_WEB_EXPEDITION";
+    private const string ApiStatusReadyForLock = "PRETE_VERROUILLAGE";
+    private const string ApiUser = "APPLICATION_WEB_EXPEDITION";
     private readonly ExpeditionDbOptions _options;
     private readonly ILogger<SqliteExpeditionDraftStore> _logger;
 
@@ -378,7 +381,7 @@ public sealed class SqliteExpeditionDraftStore : IExpeditionDraftStore
         {
             SchemaVersion = string.IsNullOrWhiteSpace(load.SchemaVersion) ? "1.2" : load.SchemaVersion,
             IdLotVerrouillage = $"SERVEXPE-{load.DateTournee:yyyy-MM-dd}-{requestedAtLocal:HHmm}-{lotSequence}",
-            Source = "APPLICATION_WEB_SERVEXPE",
+            Source = ApiSource,
             DateTournee = load.DateTournee,
             DateVerrouillageDemandee = requestedAtLocal,
             FuseauHoraireMetier = string.IsNullOrWhiteSpace(load.FuseauHoraireMetier) ? "Europe/Paris" : load.FuseauHoraireMetier,
@@ -421,7 +424,7 @@ public sealed class SqliteExpeditionDraftStore : IExpeditionDraftStore
                     DerniereModification = new DerniereModificationDto
                     {
                         Date = requestedAtLocal,
-                        Utilisateur = "SERVEXPE"
+                        Utilisateur = ApiUser
                     }
                 });
             }
@@ -430,14 +433,14 @@ public sealed class SqliteExpeditionDraftStore : IExpeditionDraftStore
             {
                 CodeTournee = tournee.CodeTournee,
                 LibelleTournee = tournee.LibelleTournee,
-                StatutPreparationWeb = StatusReadyForLock,
+                StatutPreparationWeb = ApiStatusReadyForLock,
                 Lignes = lineDtos
             });
         }
 
         if (request.Tournees.Count == 0)
         {
-            _logger.LogInformation("Aucune tournée PRET_VERROUILLAGE à transmettre au verrouillage SERVEXPE.");
+            _logger.LogInformation("Aucune tournée PRET_VERROUILLAGE/PRETE_VERROUILLAGE à transmettre au verrouillage API Expédition.");
             return null;
         }
 

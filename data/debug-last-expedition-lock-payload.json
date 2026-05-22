@@ -1,0 +1,57 @@
+﻿{
+    "tournees":  [
+                     {
+                         "statutPreparationWeb":  "PRETE_VERROUILLAGE",
+                         "lignes":  [
+                                        {
+                                            "derniereModification":  {
+                                                                         "utilisateur":  "APPLICATION_WEB_EXPEDITION",
+                                                                         "date":  "2026-05-22T11:01:10.9814707+02:00"
+                                                                     },
+                                            "commentaireExceptionnel":  null,
+                                            "idLigneSource":  "2026-05-25|1001|1|1108|1664|0",
+                                            "pointLivraison":  {
+                                                                   "ville":  "LA VERRIE",
+                                                                   "adresseLigne1":  "1 RUE LOUIS PASTEUR",
+                                                                   "adresseLigne3":  null,
+                                                                   "codePDL":  "1664",
+                                                                   "codePostal":  "85130",
+                                                                   "descriptionPDL":  "HOTEL LA VERRIAIRE - LA VERRIE",
+                                                                   "adresseLigne2":  null
+                                                               },
+                                            "client":  {
+                                                           "numClient":  "1108",
+                                                           "nomAffiche":  "HOTEL LA VERRIAIRE - LA VERRIE",
+                                                           "nomClient":  "HOTEL LA VERRIAIRE SAS"
+                                                       },
+                                            "quantitesPrevues":  [
+                                                                     {
+                                                                         "quantiteLivreePrevue":  4,
+                                                                         "libelle":  "Rolls",
+                                                                         "codeArticle":  "ROLLS"
+                                                                     },
+                                                                     {
+                                                                         "quantiteLivreePrevue":  null,
+                                                                         "libelle":  "Tapis",
+                                                                         "codeArticle":  "TAPIS"
+                                                                     },
+                                                                     {
+                                                                         "quantiteLivreePrevue":  null,
+                                                                         "libelle":  "Sacs",
+                                                                         "codeArticle":  "SACS"
+                                                                     }
+                                                                 ],
+                                            "ordreArret":  0
+                                        }
+                                    ],
+                         "codeTournee":  "1001",
+                         "libelleTournee":  "CHATAIGNERAIE LES HERBIERS"
+                     }
+                 ],
+    "source":  "APPLICATION_WEB_EXPEDITION",
+    "dateTournee":  "2026-05-25",
+    "idLotVerrouillage":  "SERVEXPE-2026-05-22-1101-001",
+    "fuseauHoraireMetier":  "Europe/Paris",
+    "schemaVersion":  "1.2",
+    "dateVerrouillageDemandee":  "2026-05-22T11:01:10.9814707+02:00"
+}

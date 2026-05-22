@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.Extensions.Options;
 using MobileSLI.Expedition.Web.Data;
 using MobileSLI.Expedition.Web.Models;
@@ -131,6 +132,9 @@ public sealed class VerrouillageService
                 lot.Request.IdLotVerrouillage,
                 lot.Request.Tournees.Count);
 
+            // Diagnostic : sauvegarder le payload JSON réel pour inspection
+            await SaveDebugPayloadAsync(lot.Request, cancellationToken);
+
             var response = await _apiClient.VerrouillerAsync(lot.Request, cancellationToken);
 
             if (SuccessStatuses.Contains(response.Statut))
@@ -217,6 +221,26 @@ public sealed class VerrouillageService
         catch (TimeZoneNotFoundException)
         {
             return TimeZoneInfo.FindSystemTimeZoneById("Romance Standard Time");
+        }
+    }
+
+    private async Task SaveDebugPayloadAsync(ExpeditionLockRequest request, CancellationToken cancellationToken)
+    {
+        try
+        {
+            // Sauvegarder le payload JSON réel pour inspection et test cURL manuel
+            var debugDir = Path.Combine(AppContext.BaseDirectory, "..", "..", "data");
+            Directory.CreateDirectory(debugDir);
+
+            var debugFile = Path.Combine(debugDir, "debug-last-expedition-lock-payload.json");
+            var json = JsonSerializer.Serialize(request, JsonDefaults.Options);
+            await File.WriteAllTextAsync(debugFile, json, cancellationToken);
+
+            _logger.LogInformation("Payload JSON de verrouillage sauvegardé pour diagnostic : {FilePath}", debugFile);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Impossible de sauvegarder le payload de diagnostic.");
         }
     }
 }

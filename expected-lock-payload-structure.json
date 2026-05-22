@@ -1,0 +1,57 @@
+{
+  "schemaVersion": "1.2",
+  "idLotVerrouillage": "SERVEXPE-2026-05-25-2235-001",
+  "source": "APPLICATION_WEB_EXPEDITION",
+  "dateTournee": "2026-05-25",
+  "dateVerrouillageDemandee": "2026-05-24T22:35:00+02:00",
+  "fuseauHoraireMetier": "Europe/Paris",
+  "tournees": [
+    {
+      "codeTournee": "1001",
+      "libelleTournee": "CHATAGNERAIE LES HERBIERS",
+      "statutPreparationWeb": "PRETE_VERROUILLAGE",
+      "lignes": [
+        {
+          "idLigneSource": "identifiant-exact-du-get-api",
+          "ordreArret": 1,
+          "client": {
+            "numClient": "1108",
+            "nomClient": "HOTEL LA VERRIAIRE - LA VERRIE",
+            "nomAffiche": "HOTEL LA VERRIAIRE - LA VERRIE"
+          },
+          "pointLivraison": {
+            "codePDL": "1664",
+            "descriptionPDL": "HOTEL LA VERRIAIRE - LA VERRIE",
+            "adresseLigne1": null,
+            "adresseLigne2": null,
+            "adresseLigne3": null,
+            "ville": null,
+            "codePostal": null
+          },
+          "commentaireExceptionnel": null,
+          "quantitesPrevues": [
+            {
+              "codeArticle": "ROLLS",
+              "libelle": "Rolls",
+              "quantiteLivreePrevue": 4
+            },
+            {
+              "codeArticle": "TAPIS",
+              "libelle": "Tapis",
+              "quantiteLivreePrevue": null
+            },
+            {
+              "codeArticle": "SACS",
+              "libelle": "Sacs",
+              "quantiteLivreePrevue": null
+            }
+          ],
+          "derniereModification": {
+            "date": "2026-05-24T22:35:00+02:00",
+            "utilisateur": "APPLICATION_WEB_EXPEDITION"
+          }
+        }
+      ]
+    }
+  ]
+}

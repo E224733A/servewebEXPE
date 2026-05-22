@@ -63,6 +63,11 @@ public sealed class ExpeditionApiClient : IExpeditionApiClient
 
         if (!response.IsSuccessStatusCode)
         {
+            _logger.LogError(
+                "Erreur API verrouillage (HTTP {StatusCode}). Body réponse : {ResponseBody}",
+                (int)response.StatusCode,
+                content);
+
             var apiError = TryReadApiError(content);
             var message = BuildApiErrorMessage(apiError, "Le verrouillage Expédition a été refusé par l'API.");
 
