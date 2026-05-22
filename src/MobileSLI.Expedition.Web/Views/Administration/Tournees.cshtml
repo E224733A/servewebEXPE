@@ -1,0 +1,53 @@
+@model TourneesIndexViewModel
+@{
+    ViewData["Title"] = "Administration - Tournées";
+}
+
+<section class="screen-header">
+    <div>
+        <p class="eyebrow">Administration · choix de tournée</p>
+        <h1>Commentaires exceptionnels</h1>
+        <p class="lead">Date préparée : @Model.DateTournee.ToString("dd/MM/yyyy") · fuseau : @Model.FuseauHoraireMetier</p>
+    </div>
+    <div class="actions">
+        <a class="button button-secondary" asp-action="Index">Accueil Administration</a>
+    </div>
+</section>
+
+<section class="panel panel-table">
+    <div class="section-header">
+        <div>
+            <p class="eyebrow">Tournées disponibles</p>
+            <h2>Choisir une tournée à commenter</h2>
+        </div>
+        <span class="badge badge-soft">Administration : commentaires uniquement</span>
+    </div>
+
+    <div class="table-wrapper">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Code</th>
+                    <th>Libellé</th>
+                    <th>État</th>
+                    <th>Lignes</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var tournee in Model.Tournees)
+                {
+                    <tr>
+                        <td><strong>@tournee.CodeTournee</strong></td>
+                        <td>@tournee.LibelleTournee</td>
+                        <td><span class="badge @CssStatus.ClassFor(tournee.EtatPreparation)">@tournee.EtatPreparation</span></td>
+                        <td>@tournee.NombreLignes</td>
+                        <td>
+                            <a class="button button-secondary button-small" asp-controller="Administration" asp-action="Commentaires" asp-route-codeTournee="@tournee.CodeTournee">Ouvrir commentaires</a>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</section>

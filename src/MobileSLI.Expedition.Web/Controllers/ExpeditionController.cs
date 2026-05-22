@@ -1,7 +1,9 @@
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 using MobileSLI.Expedition.Web.Data;
 using MobileSLI.Expedition.Web.Models;
+using MobileSLI.Expedition.Web.Options;
 using MobileSLI.Expedition.Web.Services;
 using MobileSLI.Expedition.Web.ViewModels;
 
@@ -13,6 +15,7 @@ public sealed class ExpeditionController : Controller
     private readonly IExpeditionDraftStore _draftStore;
     private readonly VerrouillageService _verrouillageService;
     private readonly IWebHostEnvironment _environment;
+    private readonly VerrouillageOptions _verrouillageOptions;
     private readonly ILogger<ExpeditionController> _logger;
 
     public ExpeditionController(
@@ -20,21 +23,28 @@ public sealed class ExpeditionController : Controller
         IExpeditionDraftStore draftStore,
         VerrouillageService verrouillageService,
         IWebHostEnvironment environment,
+        IOptions<VerrouillageOptions> verrouillageOptions,
         ILogger<ExpeditionController> logger)
     {
         _apiClient = apiClient;
         _draftStore = draftStore;
         _verrouillageService = verrouillageService;
         _environment = environment;
+        _verrouillageOptions = verrouillageOptions.Value;
         _logger = logger;
     }
 
     [HttpGet("/")]
+    public IActionResult Root()
+    {
+        return Redirect("/expedition");
+    }
+
+    [HttpGet("/expedition")]
     public async Task<IActionResult> Index(CancellationToken cancellationToken)
     {
         var load = await _draftStore.GetLastLoadedDataAsync(cancellationToken);
         var locks = await _draftStore.GetRecentLockHistoryAsync(5, cancellationToken);
-
         var model = new HomeIndexViewModel
         {
             HasLoadedData = load is not null,
@@ -42,7 +52,6 @@ public sealed class ExpeditionController : Controller
             TourneesCount = load?.Tournees.Count ?? 0,
             RecentLocks = locks
         };
-
         return View(model);
     }
 
@@ -78,11 +87,9 @@ public sealed class ExpeditionController : Controller
         try
         {
             var ok = await _apiClient.TesterApiAsync(cancellationToken);
-
             TempData[ok ? "Success" : "Error"] = ok
                 ? "Mode test API : API joignable. Aucun chargement métier n'a été effectué."
                 : "Mode test API : l'API ne répond pas correctement.";
-
             return RedirectToAction(nameof(Index));
         }
         catch (Exception ex)
@@ -108,24 +115,20 @@ public sealed class ExpeditionController : Controller
         {
             DateTournee = load.DateTournee,
             FuseauHoraireMetier = load.FuseauHoraireMetier,
-            Tournees = load.Tournees
-                .OrderBy(t => t.CodeTournee)
-                .Select(t =>
+            Tournees = load.Tournees.OrderBy(t => t.CodeTournee).Select(t =>
+            {
+                states.TryGetValue(t.CodeTournee, out var state);
+                var isLocked = t.EstVerrouilleeBd || state?.IsLocked == true;
+                return new TourneeListItemViewModel
                 {
-                    states.TryGetValue(t.CodeTournee, out var state);
-                    var isLocked = t.EstVerrouilleeBd || state?.IsLocked == true;
-                    return new TourneeListItemViewModel
-                    {
-                        CodeTournee = t.CodeTournee,
-                        LibelleTournee = t.LibelleTournee,
-                        EtatPreparation = isLocked ? "VERROUILLEE_BD" : state?.Status ?? t.EtatPreparation,
-                        IsLocked = isLocked,
-                        NombreLignes = t.Lignes.Count
-                    };
-                })
-                .ToList()
+                    CodeTournee = t.CodeTournee,
+                    LibelleTournee = t.LibelleTournee,
+                    EtatPreparation = isLocked ? DraftStatuses.Verrouille : state?.Status ?? t.EtatPreparation,
+                    IsLocked = isLocked,
+                    NombreLignes = t.Lignes.Count
+                };
+            }).ToList()
         };
-
         return View(model);
     }
 
@@ -138,7 +141,6 @@ public sealed class ExpeditionController : Controller
             TempData["Error"] = "La tournée demandée n'existe pas dans les données chargées.";
             return RedirectToAction(nameof(Tournees));
         }
-
         return View(model);
     }
 
@@ -146,39 +148,7 @@ public sealed class ExpeditionController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Preparer(string codeTournee, PreparationInputModel input, CancellationToken cancellationToken)
     {
-        var load = await _draftStore.GetLastLoadedDataAsync(cancellationToken);
-        var tournee = load?.Tournees.FirstOrDefault(t => string.Equals(t.CodeTournee, codeTournee, StringComparison.OrdinalIgnoreCase));
-        if (load is null || tournee is null)
-        {
-            TempData["Error"] = "La tournée demandée n'existe pas dans les données chargées.";
-            return RedirectToAction(nameof(Tournees));
-        }
-
-        var state = await _draftStore.GetTourneeStateAsync(load.DateTournee, codeTournee, cancellationToken);
-        if (tournee.EstVerrouilleeBd || state?.IsLocked == true)
-        {
-            TempData["Error"] = "Cette tournée est verrouillée en BD. La modification est refusée.";
-            return RedirectToAction(nameof(Preparer), new { codeTournee });
-        }
-
-        if (!ModelState.IsValid)
-        {
-            var invalidModel = await BuildPreparationViewModelAsync(codeTournee, cancellationToken);
-            if (invalidModel is null)
-            {
-                return RedirectToAction(nameof(Tournees));
-            }
-
-            ReapplyInputValues(invalidModel, input);
-            return View(invalidModel);
-        }
-
-        var result = await SavePreparationDraftAsync(
-            codeTournee,
-            input,
-            "EN_PREPARATION_WEB",
-            cancellationToken);
-
+        var result = await SavePreparationDraftAsync(codeTournee, input, DraftStatuses.Brouillon, cancellationToken);
         if (!result.Success)
         {
             var invalidModel = await BuildPreparationViewModelAsync(codeTournee, cancellationToken);
@@ -187,14 +157,14 @@ public sealed class ExpeditionController : Controller
                 return RedirectToAction(nameof(Tournees));
             }
 
-            ModelState.AddModelError(
-                string.Empty,
-                result.Message ?? "Erreur inconnue pendant l'enregistrement du brouillon.");
+            ModelState.AddModelError(string.Empty, result.Message ?? "Erreur inconnue pendant l'enregistrement du brouillon.");
             ReapplyInputValues(invalidModel, input);
             return View(invalidModel);
         }
 
-        TempData["Success"] = "Brouillon enregistré côté application web.";
+        TempData["Success"] = result.StatusConservePretVerrouillage
+            ? "Quantités mises à jour. La tournée reste prête pour le verrouillage automatique de 22h35."
+            : "Quantités enregistrées côté Expédition.";
 
         return string.Equals(input.ActionType, "recap", StringComparison.OrdinalIgnoreCase)
             ? RedirectToAction(nameof(Recapitulatif), new { codeTournee })
@@ -226,94 +196,20 @@ public sealed class ExpeditionController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> DetailLigne(string codeTournee, string idLigneSource, PreparationLigneInputModel input, CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(input.IdLigneSource))
-        {
-            input.IdLigneSource = idLigneSource;
-        }
+        input.IdLigneSource = string.IsNullOrWhiteSpace(input.IdLigneSource) ? idLigneSource : input.IdLigneSource;
+        var result = await SavePreparationDraftAsync(
+            codeTournee,
+            new PreparationInputModel { Lignes = [input] },
+            DraftStatuses.Brouillon,
+            cancellationToken);
 
-        var load = await _draftStore.GetLastLoadedDataAsync(cancellationToken);
-        var tournee = load?.Tournees.FirstOrDefault(t => string.Equals(t.CodeTournee, codeTournee, StringComparison.OrdinalIgnoreCase));
-        if (load is null || tournee is null)
-        {
-            TempData["Error"] = "La tournée demandée n'existe pas dans les données chargées.";
-            return RedirectToAction(nameof(Tournees));
-        }
+        TempData[result.Success ? "Success" : "Error"] = result.Success
+            ? (result.StatusConservePretVerrouillage
+                ? "Quantités de la ligne mises à jour. La tournée reste prête pour verrouillage."
+                : "Quantités de la ligne enregistrées.")
+            : result.Message;
 
-        var state = await _draftStore.GetTourneeStateAsync(load.DateTournee, codeTournee, cancellationToken);
-        if (tournee.EstVerrouilleeBd || state?.IsLocked == true)
-        {
-            TempData["Error"] = "Cette tournée est verrouillée en BD. La modification est refusée.";
-            return RedirectToAction(nameof(DetailLigne), new { codeTournee, idLigneSource = input.IdLigneSource });
-        }
-
-        var ligne = tournee.Lignes.FirstOrDefault(l => string.Equals(l.IdLigneSource, input.IdLigneSource, StringComparison.OrdinalIgnoreCase));
-        if (ligne is null)
-        {
-            TempData["Error"] = "La ligne demandée n'existe pas dans la tournée chargée.";
-            return RedirectToAction(nameof(Preparer), new { codeTournee });
-        }
-
-        var articles = BuildArticlesPrepares(load.ArticlesSuivis);
-        var errors = ValidatePreparationInput(
-            new PreparationInputModel
-            {
-                Lignes = [input]
-            },
-            tournee,
-            articles);
-
-        if (errors.Count > 0)
-        {
-            foreach (var error in errors)
-            {
-                ModelState.AddModelError(string.Empty, error);
-            }
-
-            var invalidModel = await BuildPreparationViewModelAsync(codeTournee, cancellationToken);
-            if (invalidModel is null)
-            {
-                return RedirectToAction(nameof(Tournees));
-            }
-
-            ReapplyInputValues(
-                invalidModel,
-                new PreparationInputModel
-                {
-                    Lignes = [input]
-                });
-
-            ViewData["SelectedLineId"] = input.IdLigneSource;
-            return View(invalidModel);
-        }
-
-        var allowedArticles = articles.Select(a => a.CodeArticle).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var draft = new SavePreparationLineDraft
-        {
-            IdLigneSource = input.IdLigneSource,
-            CommentaireExceptionnel = input.CommentaireExceptionnel,
-            Quantites = input.Quantites
-                .Where(q => allowedArticles.Contains(q.CodeArticle))
-                .ToDictionary(q => q.CodeArticle, q => q.QuantiteLivreePrevue, StringComparer.OrdinalIgnoreCase)
-        };
-
-        try
-        {
-            await _draftStore.SavePreparationAsync(
-                load.DateTournee,
-                codeTournee,
-                [draft],
-                "EN_PREPARATION_WEB",
-                HttpContext.Connection.RemoteIpAddress?.ToString(),
-                cancellationToken);
-
-            TempData["Success"] = "Ligne enregistrée dans le brouillon local.";
-            return RedirectToAction(nameof(DetailLigne), new { codeTournee, idLigneSource = input.IdLigneSource });
-        }
-        catch (InvalidOperationException ex)
-        {
-            TempData["Error"] = ex.Message;
-            return RedirectToAction(nameof(DetailLigne), new { codeTournee, idLigneSource = input.IdLigneSource });
-        }
+        return RedirectToAction(nameof(DetailLigne), new { codeTournee, idLigneSource = input.IdLigneSource });
     }
 
     [HttpGet("/expedition/tournees/{codeTournee}/recapitulatif")]
@@ -325,18 +221,14 @@ public sealed class ExpeditionController : Controller
             TempData["Error"] = "La tournée demandée n'existe pas dans les données chargées.";
             return RedirectToAction(nameof(Tournees));
         }
-
         return View(model);
     }
 
     [HttpPost("/expedition/tournees/{codeTournee}/marquer-pret")]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> MarquerPretPourVerrouillage(
-        string codeTournee,
-        CancellationToken cancellationToken)
+    public async Task<IActionResult> MarquerPretPourVerrouillage(string codeTournee, CancellationToken cancellationToken)
     {
         var model = await BuildPreparationViewModelAsync(codeTournee, cancellationToken);
-
         if (model is null)
         {
             TempData["Error"] = "La tournée demandée n'existe pas dans les données chargées.";
@@ -345,7 +237,7 @@ public sealed class ExpeditionController : Controller
 
         if (model.IsReadOnly)
         {
-            TempData["Error"] = "Cette tournée est déjà verrouillée en BD.";
+            TempData["Error"] = "Cette tournée est déjà verrouillée.";
             return RedirectToAction(nameof(Recapitulatif), new { codeTournee });
         }
 
@@ -354,7 +246,6 @@ public sealed class ExpeditionController : Controller
             Lignes = model.Lignes.Select(l => new PreparationLigneInputModel
             {
                 IdLigneSource = l.IdLigneSource,
-                CommentaireExceptionnel = l.CommentaireExceptionnel,
                 Quantites = l.Quantites.Select(q => new PreparationQuantiteInputModel
                 {
                     CodeArticle = q.Key,
@@ -363,19 +254,11 @@ public sealed class ExpeditionController : Controller
             }).ToList()
         };
 
-        var result = await SavePreparationDraftAsync(
-            codeTournee,
-            input,
-            "PRETE_VERROUILLAGE",
-            cancellationToken);
+        var result = await SavePreparationDraftAsync(codeTournee, input, DraftStatuses.PretVerrouillage, cancellationToken);
+        TempData[result.Success ? "Success" : "Error"] = result.Success
+            ? "Tournée marquée prête pour le verrouillage automatique de 22h35."
+            : result.Message;
 
-        if (!result.Success)
-        {
-            TempData["Error"] = result.Message ?? "Erreur inconnue pendant le marquage prêt pour verrouillage.";
-            return RedirectToAction(nameof(Recapitulatif), new { codeTournee });
-        }
-
-        TempData["Success"] = "Tournée marquée prête pour le verrouillage automatique.";
         return RedirectToAction(nameof(Recapitulatif), new { codeTournee });
     }
 
@@ -388,31 +271,16 @@ public sealed class ExpeditionController : Controller
             return NotFound();
         }
 
-        if (string.IsNullOrWhiteSpace(codeTournee))
-        {
-            TempData["Error"] = "Impossible de déclencher le verrouillage manuel : code tournée manquant.";
-            return RedirectToAction(nameof(Tournees));
-        }
-
         try
         {
-            var requestedAtLocal = DateTimeOffset.Now;
-            var lotSequence = $"DEV-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}";
-
             var result = await _verrouillageService.TryRunDetailedAsync(
-                requestedAtLocal,
-                lotSequence,
+                DateTimeOffset.UtcNow,
+                $"DEV-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}",
                 cancellationToken,
-                ignorerVerrouillageDejaReussi: true);
+                ignorerVerrouillageDejaReussi: true,
+                bypassWindow: _verrouillageOptions.AllowDevelopmentManualLockOutsideWindow);
 
-            if (result.IsSuccess)
-            {
-                TempData["Success"] = result.Message;
-            }
-            else
-            {
-                TempData["Error"] = result.Message;
-            }
+            TempData[result.IsSuccess ? "Success" : "Error"] = result.Message;
         }
         catch (Exception ex)
         {
@@ -442,8 +310,9 @@ public sealed class ExpeditionController : Controller
             DateTournee = load.DateTournee,
             CodeTournee = tournee.CodeTournee,
             LibelleTournee = tournee.LibelleTournee,
-            EtatPreparation = isReadOnly ? "VERROUILLEE_BD" : tourneeState?.Status ?? tournee.EtatPreparation,
+            EtatPreparation = isReadOnly ? DraftStatuses.Verrouille : tourneeState?.Status ?? tournee.EtatPreparation,
             IsReadOnly = isReadOnly,
+            IsAdministrationMode = false,
             Articles = articlesPrepares,
             Lignes = []
         };
@@ -463,20 +332,17 @@ public sealed class ExpeditionController : Controller
                 Instructions = ligne.InfosLecture.Instructions,
                 ZoneDechargement = ligne.InfosLecture.ZoneDechargement,
                 FermetureClient = ligne.InfosLecture.FermetureClient,
-                CommentaireExceptionnel = lineState?.CommentaireExceptionnel ?? ligne.BrouillonInitial.CommentaireExceptionnel,
-                DerniereModificationUtc = lineState?.LastModifiedUtc,
+                CommentaireExceptionnel = null,
+                DerniereModificationUtc = lineState?.LastModifiedQuantiteUtc,
                 Quantites = new Dictionary<string, int?>(StringComparer.OrdinalIgnoreCase)
             };
 
             foreach (var article in articlesPrepares)
             {
-                var value = lineState is not null && lineState.Quantites.TryGetValue(article.CodeArticle, out var stored)
+                vm.Quantites[article.CodeArticle] = lineState is not null && lineState.Quantites.TryGetValue(article.CodeArticle, out var stored)
                     ? stored
                     : ligne.BrouillonInitial.Quantites.FirstOrDefault(q => string.Equals(q.CodeArticle, article.CodeArticle, StringComparison.OrdinalIgnoreCase))?.QuantiteLivreePrevue;
-
-                vm.Quantites[article.CodeArticle] = value;
             }
-
             model.Lignes.Add(vm);
         }
 
@@ -491,22 +357,12 @@ public sealed class ExpeditionController : Controller
             new ArticleSuiviDto { CodeArticle = "TAPIS", LibelleArticle = "Tapis", TypeQuantite = "LIVREE_PREVUE" },
             new ArticleSuiviDto { CodeArticle = "SACS", LibelleArticle = "Sacs", TypeQuantite = "LIVREE_PREVUE" }
         };
-
-        return defaults
-            .Select(defaultArticle =>
-            {
-                var articleApi = articles.FirstOrDefault(a => string.Equals(a.CodeArticle, defaultArticle.CodeArticle, StringComparison.OrdinalIgnoreCase));
-                return articleApi is null || string.IsNullOrWhiteSpace(articleApi.CodeArticle)
-                    ? defaultArticle
-                    : articleApi;
-            })
-            .ToList();
+        return defaults.Select(defaultArticle => articles.FirstOrDefault(a => string.Equals(a.CodeArticle, defaultArticle.CodeArticle, StringComparison.OrdinalIgnoreCase)) ?? defaultArticle).ToList();
     }
 
     private static void ReapplyInputValues(PreparationTourneeViewModel model, PreparationInputModel input)
     {
         var inputByLine = input.Lignes.ToDictionary(l => l.IdLigneSource, StringComparer.OrdinalIgnoreCase);
-
         foreach (var ligne in model.Lignes)
         {
             if (!inputByLine.TryGetValue(ligne.IdLigneSource, out var inputLine))
@@ -514,14 +370,9 @@ public sealed class ExpeditionController : Controller
                 continue;
             }
 
-            ligne.CommentaireExceptionnel = inputLine.CommentaireExceptionnel;
-
-            foreach (var quantite in inputLine.Quantites)
+            foreach (var quantite in inputLine.Quantites.Where(q => !string.IsNullOrWhiteSpace(q.CodeArticle)))
             {
-                if (!string.IsNullOrWhiteSpace(quantite.CodeArticle))
-                {
-                    ligne.Quantites[quantite.CodeArticle] = quantite.QuantiteLivreePrevue;
-                }
+                ligne.Quantites[quantite.CodeArticle] = quantite.QuantiteLivreePrevue;
             }
         }
     }
@@ -531,7 +382,6 @@ public sealed class ExpeditionController : Controller
         var errors = new List<string>();
         var knownLines = tournee.Lignes.Select(l => l.IdLigneSource).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var knownArticles = articles.Select(a => a.CodeArticle).ToHashSet(StringComparer.OrdinalIgnoreCase);
-
         foreach (var line in input.Lignes)
         {
             if (string.IsNullOrWhiteSpace(line.IdLigneSource) || !knownLines.Contains(line.IdLigneSource))
@@ -539,7 +389,6 @@ public sealed class ExpeditionController : Controller
                 errors.Add("Une ligne envoyée par le formulaire ne correspond à aucune ligne chargée.");
                 continue;
             }
-
             foreach (var quantity in line.Quantites)
             {
                 if (string.IsNullOrWhiteSpace(quantity.CodeArticle) || !knownArticles.Contains(quantity.CodeArticle))
@@ -547,91 +396,89 @@ public sealed class ExpeditionController : Controller
                     errors.Add($"Article inconnu pour la ligne {line.IdLigneSource}.");
                     continue;
                 }
-
                 if (quantity.QuantiteLivreePrevue < 0)
                 {
                     errors.Add($"Quantité négative interdite pour la ligne {line.IdLigneSource}, article {quantity.CodeArticle}.");
                 }
             }
         }
-
         return errors.Distinct().ToList();
     }
 
     private static string BuildAddress(PointLivraisonDto point)
     {
-        var parts = new[]
-        {
-            point.AdresseLigne1,
-            point.AdresseLigne2,
-            point.AdresseLigne3,
-            string.Join(' ', new[] { point.CodePostal, point.Ville }.Where(v => !string.IsNullOrWhiteSpace(v)))
-        };
-
+        var parts = new[] { point.AdresseLigne1, point.AdresseLigne2, point.AdresseLigne3, string.Join(' ', new[] { point.CodePostal, point.Ville }.Where(v => !string.IsNullOrWhiteSpace(v))) };
         return string.Join(" - ", parts.Where(p => !string.IsNullOrWhiteSpace(p)));
     }
 
-    private async Task<SavePreparationResult> SavePreparationDraftAsync(
-        string codeTournee,
-        PreparationInputModel input,
-        string status,
-        CancellationToken cancellationToken)
+    private async Task<SavePreparationResult> SavePreparationDraftAsync(string codeTournee, PreparationInputModel input, string status, CancellationToken cancellationToken)
     {
         var load = await _draftStore.GetLastLoadedDataAsync(cancellationToken);
-        var tournee = load?.Tournees.FirstOrDefault(t =>
-            string.Equals(t.CodeTournee, codeTournee, StringComparison.OrdinalIgnoreCase));
-
+        var tournee = load?.Tournees.FirstOrDefault(t => string.Equals(t.CodeTournee, codeTournee, StringComparison.OrdinalIgnoreCase));
         if (load is null || tournee is null)
         {
             return SavePreparationResult.Fail("La tournée demandée n'existe pas dans les données chargées.");
         }
 
         var state = await _draftStore.GetTourneeStateAsync(load.DateTournee, codeTournee, cancellationToken);
-
         if (tournee.EstVerrouilleeBd || state?.IsLocked == true)
         {
-            return SavePreparationResult.Fail("Cette tournée est verrouillée en BD. La modification est refusée.");
+            return SavePreparationResult.Fail("Cette tournée est verrouillée. La modification est refusée.");
         }
 
         var articles = BuildArticlesPrepares(load.ArticlesSuivis);
         var errors = ValidatePreparationInput(input, tournee, articles);
-
         if (errors.Count > 0)
         {
             return SavePreparationResult.Fail(string.Join(" ", errors));
         }
 
-        var allowedArticles = articles
-            .Select(a => a.CodeArticle)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
+        var allowedArticles = articles.Select(a => a.CodeArticle).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var drafts = input.Lignes.Select(l => new SavePreparationLineDraft
         {
             IdLigneSource = l.IdLigneSource,
-            CommentaireExceptionnel = l.CommentaireExceptionnel,
             Quantites = l.Quantites
                 .Where(q => allowedArticles.Contains(q.CodeArticle))
-                .ToDictionary(
-                    q => q.CodeArticle,
-                    q => q.QuantiteLivreePrevue,
-                    StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(q => q.CodeArticle, q => q.QuantiteLivreePrevue, StringComparer.OrdinalIgnoreCase)
         }).ToList();
 
-        await _draftStore.SavePreparationAsync(
-            load.DateTournee,
-            codeTournee,
-            drafts,
-            status,
-            HttpContext.Connection.RemoteIpAddress?.ToString(),
-            cancellationToken);
+        var effectiveStatus = ResolveStatusAfterExpeditionUpdate(status, state?.Status);
+        var statusConservePretVerrouillage = IsReadyForLockStatus(state?.Status)
+            && string.Equals(status, DraftStatuses.Brouillon, StringComparison.OrdinalIgnoreCase);
 
-        return SavePreparationResult.Ok();
+        try
+        {
+            await _draftStore.SavePreparationAsync(load.DateTournee, codeTournee, drafts, effectiveStatus, HttpContext.Connection.RemoteIpAddress?.ToString(), cancellationToken);
+            return SavePreparationResult.Ok(statusConservePretVerrouillage);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return SavePreparationResult.Fail(ex.Message);
+        }
     }
 
-    private sealed record SavePreparationResult(bool Success, string? Message)
+    private static string ResolveStatusAfterExpeditionUpdate(string requestedStatus, string? currentStatus)
     {
-        public static SavePreparationResult Ok() => new(true, null);
+        if (string.Equals(requestedStatus, DraftStatuses.Brouillon, StringComparison.OrdinalIgnoreCase)
+            && IsReadyForLockStatus(currentStatus))
+        {
+            // Règle métier : une tournée prête pour verrouillage reste prête.
+            // Une correction de quantité ne doit jamais la refaire passer en brouillon.
+            return string.IsNullOrWhiteSpace(currentStatus) ? DraftStatuses.PretVerrouillage : currentStatus;
+        }
 
-        public static SavePreparationResult Fail(string message) => new(false, message);
+        return requestedStatus;
+    }
+
+    private static bool IsReadyForLockStatus(string? status)
+    {
+        var normalized = status?.Trim().ToUpperInvariant();
+        return normalized is "PRET_VERROUILLAGE" or "PRETE_VERROUILLAGE";
+    }
+
+    private sealed record SavePreparationResult(bool Success, string? Message, bool StatusConservePretVerrouillage)
+    {
+        public static SavePreparationResult Ok(bool statusConservePretVerrouillage = false) => new(true, null, statusConservePretVerrouillage);
+        public static SavePreparationResult Fail(string message) => new(false, message, false);
     }
 }

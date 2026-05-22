@@ -132,7 +132,7 @@ public sealed class ReglesPreparationDto
 
     public bool ModificationApiPendantPreparation { get; set; } = false;
 
-    public string VerrouillagePrevuVers { get; set; } = "00:05";
+    public string VerrouillagePrevuVers { get; set; } = "22:35";
 }
 
 public sealed class ExpeditionLockRequest
@@ -141,7 +141,7 @@ public sealed class ExpeditionLockRequest
 
     public string IdLotVerrouillage { get; set; } = string.Empty;
 
-    public string Source { get; set; } = "APPLICATION_WEB_EXPEDITION";
+    public string Source { get; set; } = "APPLICATION_WEB_SERVEXPE";
 
     public DateOnly DateTournee { get; set; }
 
@@ -158,7 +158,7 @@ public sealed class TourneeLockDto
 
     public string LibelleTournee { get; set; } = string.Empty;
 
-    public string StatutPreparationWeb { get; set; } = "EN_PREPARATION_WEB";
+    public string StatutPreparationWeb { get; set; } = DraftStatuses.PretVerrouillage;
 
     public List<LigneLockDto> Lignes { get; set; } = [];
 }
@@ -195,7 +195,7 @@ public sealed class DerniereModificationDto
 {
     public DateTimeOffset Date { get; set; }
 
-    public string Utilisateur { get; set; } = "EXPEDITION";
+    public string Utilisateur { get; set; } = "SERVEXPE";
 }
 
 public sealed class ExpeditionLockResponse

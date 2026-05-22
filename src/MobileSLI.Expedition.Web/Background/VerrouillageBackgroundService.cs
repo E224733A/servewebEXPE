@@ -4,6 +4,9 @@ using MobileSLI.Expedition.Web.Services;
 
 namespace MobileSLI.Expedition.Web.Background;
 
+/// <summary>
+/// Filet de sécurité uniquement. Le déclencheur principal doit rester la tâche planifiée Windows à 22:35.
+/// </summary>
 public sealed class VerrouillageBackgroundService : BackgroundService
 {
     private readonly IServiceScopeFactory _scopeFactory;
@@ -21,10 +24,11 @@ public sealed class VerrouillageBackgroundService : BackgroundService
     {
         if (!_options.Enabled)
         {
-            _logger.LogInformation("Verrouillage automatique Expédition désactivé par configuration.");
+            _logger.LogInformation("Verrouillage automatique SERVEXPE désactivé par configuration.");
             return;
         }
 
+        _logger.LogInformation("BackgroundService de verrouillage actif en secours. Le déclencheur principal reste la tâche Windows 22:35.");
         var interval = TimeSpan.FromSeconds(Math.Max(10, _options.CheckEverySeconds));
         using var timer = new PeriodicTimer(interval);
 
@@ -34,9 +38,13 @@ public sealed class VerrouillageBackgroundService : BackgroundService
             {
                 await CheckAndRunAsync(stoppingToken);
             }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                return;
+            }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Erreur dans la boucle de verrouillage automatique Expédition.");
+                _logger.LogError(ex, "Erreur dans la boucle de verrouillage automatique SERVEXPE.");
             }
 
             await timer.WaitForNextTickAsync(stoppingToken);
@@ -45,36 +53,8 @@ public sealed class VerrouillageBackgroundService : BackgroundService
 
     private async Task CheckAndRunAsync(CancellationToken cancellationToken)
     {
-        var timezone = ResolveTimeZone(_options.TimeZoneId);
-        var localNow = TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, timezone);
-
-        if (!IsInsideLockWindow(localNow))
-        {
-            return;
-        }
-
         using var scope = _scopeFactory.CreateScope();
         var service = scope.ServiceProvider.GetRequiredService<VerrouillageService>();
-        await service.TryRunAsync(localNow, _options.LotSequence, cancellationToken);
-    }
-
-    private bool IsInsideLockWindow(DateTimeOffset localNow)
-    {
-        var start = new TimeOnly(_options.Hour, _options.Minute);
-        var current = TimeOnly.FromDateTime(localNow.DateTime);
-        var minutes = (current.ToTimeSpan() - start.ToTimeSpan()).TotalMinutes;
-        return minutes >= 0 && minutes < Math.Max(1, _options.WindowMinutes);
-    }
-
-    private static TimeZoneInfo ResolveTimeZone(string id)
-    {
-        try
-        {
-            return TimeZoneInfo.FindSystemTimeZoneById(id);
-        }
-        catch (TimeZoneNotFoundException)
-        {
-            return TimeZoneInfo.FindSystemTimeZoneById("Romance Standard Time");
-        }
+        await service.TryRunAsync(DateTimeOffset.UtcNow, _options.LotSequence, cancellationToken);
     }
 }

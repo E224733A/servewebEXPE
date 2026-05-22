@@ -14,6 +14,8 @@ public sealed class PreparationTourneeViewModel
 
     public bool IsReadOnly { get; set; }
 
+    public bool IsAdministrationMode { get; set; }
+
     public List<ArticleSuiviDto> Articles { get; set; } = [];
 
     public List<PreparationLigneViewModel> Lignes { get; set; } = [];
@@ -71,8 +73,6 @@ public sealed class PreparationLigneInputModel
 {
     public string IdLigneSource { get; set; } = string.Empty;
 
-    public string? CommentaireExceptionnel { get; set; }
-
     public List<PreparationQuantiteInputModel> Quantites { get; set; } = [];
 }
 
@@ -81,4 +81,11 @@ public sealed class PreparationQuantiteInputModel
     public string CodeArticle { get; set; } = string.Empty;
 
     public int? QuantiteLivreePrevue { get; set; }
+}
+
+public sealed class AdminCommentaireInputModel
+{
+    public string IdLigneSource { get; set; } = string.Empty;
+
+    public string? CommentaireExceptionnel { get; set; }
 }

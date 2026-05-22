@@ -1,15 +1,15 @@
 @model HomeIndexViewModel
 @{
-    ViewData["Title"] = "Expédition";
+    ViewData["Title"] = "Administration";
 }
 
 <section class="screen-grid screen-grid-home">
     <article class="panel panel-hero">
-        <p class="eyebrow">Interface Expédition</p>
-        <h1>Préparer les quantités prévues</h1>
+        <p class="eyebrow">Interface Administration</p>
+        <h1>Préparer les commentaires exceptionnels</h1>
         <p class="lead">
-            Cette page est réservée à l'Expédition. Elle permet de charger les tournées, choisir une tournée,
-            puis saisir uniquement les quantités livrées prévues.
+            Cette page est réservée à l'Administration. Elle permet de charger les mêmes données préparables,
+            choisir une tournée, puis saisir uniquement les commentaires exceptionnels transmis au livreur.
         </p>
 
         <div class="hero-actions-row">
@@ -24,22 +24,18 @@
             </form>
         </div>
 
-        <div class="status-strip status-strip-info">
-            <strong>Règle métier</strong>
-            <span>Aucun choix manuel de date. La date est calculée automatiquement par l'API centrale.</span>
-        </div>
         <div class="status-strip status-strip-warning">
             <strong>Séparation métier</strong>
-            <span>Les commentaires exceptionnels ne sont pas visibles et ne sont pas modifiables depuis l'interface Expédition.</span>
+            <span>Les quantités prévues ne sont jamais modifiables depuis l'interface Administration.</span>
         </div>
         <div class="status-strip status-strip-success">
             <strong>Verrouillage</strong>
-            <span>Le verrouillage automatique est prévu à 22h35 via la tâche planifiée Windows.</span>
+            <span>Les commentaires sont fusionnés avec les quantités Expédition au verrouillage automatique de 22h35.</span>
         </div>
     </article>
 
     <aside class="panel side-panel">
-        <p class="eyebrow">Dernier chargement Expédition</p>
+        <p class="eyebrow">Dernier chargement Administration</p>
         @if (Model.HasLoadedData)
         {
             <div class="metric-stack">
@@ -52,7 +48,7 @@
                     <strong>@Model.TourneesCount</strong>
                 </div>
             </div>
-            <a class="button button-secondary full-width" asp-action="Tournees">Ouvrir les tournées Expédition</a>
+            <a class="button button-secondary full-width" asp-action="Tournees">Ouvrir les tournées Administration</a>
         }
         else
         {

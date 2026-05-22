@@ -1,43 +1,49 @@
-@* Layout de base pour l'application Expédition *@
+@{
+    var currentController = ViewContext.RouteData.Values["controller"]?.ToString() ?? "Expedition";
+    var isAdministration = string.Equals(currentController, "Administration", StringComparison.OrdinalIgnoreCase);
+    var areaLabel = isAdministration ? "Administration" : "Expédition";
+    var homeController = isAdministration ? "Administration" : "Expedition";
+    var tourneesController = isAdministration ? "Administration" : "Expedition";
+}
 <!DOCTYPE html>
 <html lang="fr">
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>@ViewData["Title"] - Expédition MobileSLI</title>
+    <title>@ViewData["Title"] - @areaLabel MobileSLI</title>
     <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
 </head>
 <body>
-    <!-- Superposition globale de chargement (masquée par défaut) -->
     <div id="global-loading" class="loading-overlay d-none">
         <div class="loading-card">
             <div class="loader"></div>
             <p>Chargement…</p>
         </div>
     </div>
+
     <div class="app-shell">
         <aside class="sidebar">
-            <a class="sidebar-brand" asp-controller="Expedition" asp-action="Index">
+            <a class="sidebar-brand" asp-controller="@homeController" asp-action="Index">
                 <span class="brand-icon">SLI</span>
                 <span>
                     <strong>MobileSLI</strong>
-                    <small>Expédition</small>
+                    <small>@areaLabel</small>
                 </span>
             </a>
 
-            <nav class="sidebar-nav" aria-label="Navigation principale">
-                <a class="sidebar-link" asp-controller="Expedition" asp-action="Index">
+            <nav class="sidebar-nav" aria-label="Navigation @areaLabel">
+                <a class="sidebar-link" asp-controller="@homeController" asp-action="Index">
                     <span class="sidebar-dot"></span>
                     Accueil
                 </a>
-                <a class="sidebar-link" asp-controller="Expedition" asp-action="Tournees">
+                <a class="sidebar-link" asp-controller="@tourneesController" asp-action="Tournees">
                     <span class="sidebar-dot"></span>
                     Tournées
                 </a>
             </nav>
 
             <div class="sidebar-note">
-                <strong>00:05</strong>
+                <strong>22:35</strong>
                 <span>Verrouillage automatique API</span>
             </div>
         </aside>

@@ -1,0 +1,216 @@
+@model PreparationTourneeViewModel
+@{
+    ViewData["Title"] = "Administration - Commentaires";
+}
+
+<section class="screen-header admin-header">
+    <div>
+        <p class="eyebrow">Administration · commentaires exceptionnels uniquement</p>
+        <h1>@Model.CodeTournee - @Model.LibelleTournee</h1>
+        <p class="lead">
+            Date tournée : @Model.DateTournee.ToString("dd/MM/yyyy") · état :
+            <span class="badge @CssStatus.ClassFor(Model.EtatPreparation)">@Model.EtatPreparation</span>
+        </p>
+    </div>
+    <div class="actions">
+        <a class="button button-secondary" asp-controller="Administration" asp-action="Tournees">Liste Administration</a>
+    </div>
+</section>
+
+<section class="metrics-row">
+    <article class="metric-card">
+        <span>Lignes</span>
+        <strong>@Model.NombreLignes</strong>
+    </article>
+    <article class="metric-card">
+        <span>Commentaires</span>
+        <strong>@Model.NombreCommentaires</strong>
+    </article>
+    <article class="metric-card">
+        <span>À compléter</span>
+        <strong>@(Model.NombreLignes - Model.NombreCommentaires)</strong>
+    </article>
+    <article class="metric-card">
+        <span>Verrouillage</span>
+        <strong>22:35</strong>
+    </article>
+</section>
+
+@if (Model.IsReadOnly)
+{
+    <div class="alert alert-info">Cette tournée est verrouillée. Consultation uniquement.</div>
+}
+else
+{
+    <div class="status-strip status-strip-info admin-rule-strip">
+        <strong>Règle Administration</strong>
+        <span>Cette page sert uniquement à saisir les commentaires exceptionnels. Les quantités prévues restent gérées par l'Expédition.</span>
+    </div>
+}
+
+<section class="panel admin-comments-panel">
+    <div class="section-header compact">
+        <div>
+            <h2>Lignes client / PDL</h2>
+            <p class="muted">Saisie rapide des commentaires transmis au livreur après verrouillage.</p>
+        </div>
+        <span class="badge badge-soft">Administration uniquement</span>
+    </div>
+
+    <div class="admin-comment-list">
+        @foreach (var ligne in Model.Lignes)
+        {
+            var hasComment = !string.IsNullOrWhiteSpace(ligne.CommentaireExceptionnel);
+            <article class="admin-comment-card @(hasComment ? "has-comment" : string.Empty)">
+                <div class="admin-comment-client">
+                    <div class="admin-comment-order">Arrêt @ligne.OrdreArret</div>
+                    <h3>@ligne.NomClient</h3>
+                    <p>Client @ligne.NumClient · PDL @ligne.CodePDL</p>
+                    <small>@ligne.DescriptionPDL</small>
+                    @if (ligne.FermetureClient)
+                    {
+                        <span class="badge badge-warning">Fermeture signalée</span>
+                    }
+                </div>
+
+                <div class="admin-comment-instructions">
+                    <span>Instructions existantes</span>
+                    <strong>@(string.IsNullOrWhiteSpace(ligne.Instructions) ? "Aucune instruction existante" : ligne.Instructions)</strong>
+                </div>
+
+                <form class="admin-comment-form" asp-controller="Administration" asp-action="EnregistrerCommentaire" method="post">
+                    @Html.AntiForgeryToken()
+                    <input type="hidden" name="codeTournee" value="@Model.CodeTournee" />
+                    <input type="hidden" name="IdLigneSource" value="@ligne.IdLigneSource" />
+
+                    <label for="commentaire-@ligne.OrdreArret">Commentaire exceptionnel</label>
+                    <textarea id="commentaire-@ligne.OrdreArret"
+                              name="CommentaireExceptionnel"
+                              rows="3"
+                              placeholder="Exemple : prévenir avant passage, accès spécifique, consigne ponctuelle..."
+                              @(Model.IsReadOnly ? "readonly" : string.Empty)>@ligne.CommentaireExceptionnel</textarea>
+
+                    <div class="admin-comment-actions">
+                        @if (hasComment)
+                        {
+                            <span class="badge badge-info">Commenté</span>
+                        }
+                        else
+                        {
+                            <span class="badge badge-neutral">Vide</span>
+                        }
+
+                        @if (!Model.IsReadOnly)
+                        {
+                            <button class="button button-primary button-small" type="submit">Enregistrer</button>
+                        }
+                    </div>
+                </form>
+            </article>
+        }
+    </div>
+</section>
+
+<style>
+    .admin-header .lead {
+        max-width: 760px;
+    }
+
+    .admin-rule-strip {
+        margin-bottom: 18px;
+    }
+
+    .admin-comments-panel {
+        padding-bottom: 22px;
+    }
+
+    .admin-comment-list {
+        display: grid;
+        gap: 14px;
+    }
+
+    .admin-comment-card {
+        display: grid;
+        grid-template-columns: minmax(220px, 1.2fr) minmax(180px, 1fr) minmax(320px, 1.4fr);
+        gap: 18px;
+        align-items: stretch;
+        padding: 18px;
+        border: 1px solid var(--border);
+        border-radius: 22px;
+        background: var(--surface-soft);
+    }
+
+    .admin-comment-card.has-comment {
+        background: #f8fbff;
+        border-color: #bfdbfe;
+    }
+
+    .admin-comment-client h3 {
+        margin: 4px 0 6px;
+        font-size: 18px;
+        line-height: 1.1;
+    }
+
+    .admin-comment-client p,
+    .admin-comment-client small {
+        display: block;
+        color: var(--muted);
+        font-weight: 700;
+        margin: 0 0 4px;
+    }
+
+    .admin-comment-order {
+        color: var(--primary);
+        font-size: 12px;
+        font-weight: 900;
+        letter-spacing: .08em;
+        text-transform: uppercase;
+    }
+
+    .admin-comment-instructions {
+        padding: 14px;
+        border-radius: 18px;
+        background: #eef6ff;
+        border: 1px solid #dbeafe;
+    }
+
+    .admin-comment-instructions span,
+    .admin-comment-form label {
+        display: block;
+        margin-bottom: 8px;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 900;
+        letter-spacing: .08em;
+        text-transform: uppercase;
+    }
+
+    .admin-comment-instructions strong {
+        display: block;
+        color: var(--text);
+        line-height: 1.35;
+    }
+
+    .admin-comment-form {
+        display: grid;
+        gap: 10px;
+    }
+
+    .admin-comment-form textarea {
+        min-height: 76px;
+        resize: vertical;
+    }
+
+    .admin-comment-actions {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+    }
+
+    @@media (max-width: 1100px) {
+        .admin-comment-card {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>

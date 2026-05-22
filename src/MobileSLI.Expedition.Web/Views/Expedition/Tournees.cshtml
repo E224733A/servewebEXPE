@@ -1,9 +1,22 @@
 @model TourneesIndexViewModel
 @{
     ViewData["Title"] = "Tournées préparables";
+
+    static bool IsReadyForLockStatus(string? status)
+    {
+        var normalized = status?.Trim().ToUpperInvariant();
+        return normalized is "PRET_VERROUILLAGE" or "PRETE_VERROUILLAGE";
+    }
+
+    static bool IsInPreparationStatus(string? status)
+    {
+        var normalized = status?.Trim().ToUpperInvariant();
+        return normalized is "EN_PREPARATION_WEB" or "BROUILLON";
+    }
+
     var lockedCount = Model.Tournees.Count(t => t.IsLocked);
-    var readyCount = Model.Tournees.Count(t => string.Equals(t.EtatPreparation, "PRETE_VERROUILLAGE", StringComparison.OrdinalIgnoreCase));
-    var inProgressCount = Model.Tournees.Count(t => string.Equals(t.EtatPreparation, "EN_PREPARATION_WEB", StringComparison.OrdinalIgnoreCase));
+    var readyCount = Model.Tournees.Count(t => !t.IsLocked && IsReadyForLockStatus(t.EtatPreparation));
+    var inProgressCount = Model.Tournees.Count(t => !t.IsLocked && IsInPreparationStatus(t.EtatPreparation));
 }
 
 <section class="screen-header">
@@ -12,7 +25,7 @@
         <h1>Tournées préparables</h1>
         <p class="lead">Date tournée : @Model.DateTournee.ToString("dd/MM/yyyy") · Fuseau métier : @Model.FuseauHoraireMetier</p>
     </div>
-    <a class="button button-secondary" asp-action="Index">Retour accueil</a>
+    <a class="button button-secondary" asp-controller="Expedition" asp-action="Index">Retour accueil</a>
 </section>
 
 <section class="metrics-row">
@@ -60,10 +73,10 @@ else
                         </div>
                         <div class="tournee-actions">
                             <span class="line-count">@tournee.NombreLignes ligne(s)</span>
-                            <a class="button button-primary button-small" asp-action="Preparer" asp-route-codeTournee="@tournee.CodeTournee">
+                            <a class="button button-primary button-small" asp-controller="Expedition" asp-action="Preparer" asp-route-codeTournee="@tournee.CodeTournee">
                                 @(tournee.IsLocked ? "Consulter" : "Préparer")
                             </a>
-                            <a class="button button-secondary button-small" asp-action="Recapitulatif" asp-route-codeTournee="@tournee.CodeTournee">Récap</a>
+                            <a class="button button-secondary button-small" asp-controller="Expedition" asp-action="Recapitulatif" asp-route-codeTournee="@tournee.CodeTournee">Récap</a>
                         </div>
                     </article>
                 }

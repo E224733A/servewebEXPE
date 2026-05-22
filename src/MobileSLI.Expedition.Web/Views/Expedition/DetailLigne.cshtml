@@ -1,19 +1,26 @@
 @model PreparationTourneeViewModel
 @{
-    ViewData["Title"] = "Détail ligne";
+    ViewData["Title"] = "Expédition - Détail ligne";
     var selectedLineId = ViewData["SelectedLineId"] as string;
     var ligne = Model.Lignes.First(l => string.Equals(l.IdLigneSource, selectedLineId, StringComparison.OrdinalIgnoreCase));
+    static bool IsReadyForLockStatus(string? status)
+    {
+        var normalized = status?.Trim().ToUpperInvariant();
+        return normalized is "PRET_VERROUILLAGE" or "PRETE_VERROUILLAGE";
+    }
+
+    var isReadyForLock = IsReadyForLockStatus(Model.EtatPreparation);
 }
 
 <section class="screen-header">
     <div>
-        <p class="eyebrow">Détail ligne</p>
+        <p class="eyebrow">Expédition · détail quantité</p>
         <h1>@ligne.NomClient</h1>
         <p class="lead">Tournée @Model.CodeTournee · arrêt @ligne.OrdreArret · PDL @ligne.CodePDL</p>
     </div>
     <div class="actions">
         <a class="button button-secondary" asp-action="Preparer" asp-route-codeTournee="@Model.CodeTournee">Retour préparation</a>
-        <a class="button button-secondary" asp-action="Recapitulatif" asp-route-codeTournee="@Model.CodeTournee">Récapitulatif</a>
+        <a class="button button-secondary" asp-action="Recapitulatif" asp-route-codeTournee="@Model.CodeTournee">Récapitulatif quantités</a>
     </div>
 </section>
 
@@ -27,16 +34,17 @@
 
 @if (Model.IsReadOnly)
 {
-    <div class="alert alert-info">Cette tournée est verrouillée en BD. La consultation reste possible, mais les champs sont en lecture seule.</div>
+    <div class="alert alert-info">Cette tournée est verrouillée. La consultation reste possible, mais les champs sont en lecture seule.</div>
+}
+else if (isReadyForLock)
+{
+    <div class="alert alert-info">
+        Cette tournée est prête pour verrouillage. Une correction sur cette ligne conserve l'état prêt pour verrouillage.
+    </div>
 }
 
-<form asp-action="DetailLigne"
-      asp-route-codeTournee="@Model.CodeTournee"
-      asp-route-idLigneSource="@ligne.IdLigneSource"
-      method="post"
-      class="detail-edit-form">
+<form asp-action="DetailLigne" asp-route-codeTournee="@Model.CodeTournee" asp-route-idLigneSource="@ligne.IdLigneSource" method="post" class="detail-edit-form">
     @Html.AntiForgeryToken()
-
     <input type="hidden" name="IdLigneSource" value="@ligne.IdLigneSource" />
 
     <section class="detail-layout">
@@ -47,55 +55,17 @@
             </div>
 
             <div class="detail-grid">
-                <div class="detail-field">
-                    <span>Client</span>
-                    <strong>@ligne.NomClient</strong>
-                    <small>@ligne.NumClient</small>
-                </div>
+                <div class="detail-field"><span>Client</span><strong>@ligne.NomClient</strong><small>@ligne.NumClient</small></div>
+                <div class="detail-field"><span>Point de livraison</span><strong>@ligne.CodePDL</strong><small>@ligne.DescriptionPDL</small></div>
+                <div class="detail-field full-row"><span>Adresse</span><strong>@ligne.Adresse</strong></div>
+                <div class="detail-field full-row detail-field-info"><span>Instructions existantes</span><strong>@(string.IsNullOrWhiteSpace(ligne.Instructions) ? "Aucune instruction." : ligne.Instructions)</strong></div>
+                <div class="detail-field"><span>Zone de déchargement</span><strong>@(string.IsNullOrWhiteSpace(ligne.ZoneDechargement) ? "Non renseignée" : ligne.ZoneDechargement)</strong></div>
+                <div class="detail-field"><span>Dernière modification quantité</span><strong>@(ligne.DerniereModificationUtc.HasValue ? ligne.DerniereModificationUtc.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm") : "Non modifiée")</strong></div>
+            </div>
 
-                <div class="detail-field">
-                    <span>Point de livraison</span>
-                    <strong>@ligne.CodePDL</strong>
-                    <small>@ligne.DescriptionPDL</small>
-                </div>
-
-                <div class="detail-field full-row">
-                    <span>Adresse</span>
-                    <strong>@ligne.Adresse</strong>
-                </div>
-
-                <div class="detail-field full-row detail-field-info">
-                    <span>Instructions existantes</span>
-                    <strong>@(string.IsNullOrWhiteSpace(ligne.Instructions) ? "Aucune instruction." : ligne.Instructions)</strong>
-                </div>
-
-                <div class="detail-field full-row detail-field-editable">
-                    <div class="editable-title-row">
-                        <span>Commentaire exceptionnel</span>
-                    </div>
-
-                    @if (Model.IsReadOnly)
-                    {
-                        <strong>@(string.IsNullOrWhiteSpace(ligne.CommentaireExceptionnel) ? "Non renseigné" : ligne.CommentaireExceptionnel)</strong>
-                    }
-                    else
-                    {
-                        <textarea name="CommentaireExceptionnel"
-                                  rows="3"
-                                  placeholder="Prévoir passage avant 10h.">@ligne.CommentaireExceptionnel</textarea>
-                        <small>Champ séparé des instructions existantes.</small>
-                    }
-                </div>
-
-                <div class="detail-field">
-                    <span>Zone de déchargement</span>
-                    <strong>@(string.IsNullOrWhiteSpace(ligne.ZoneDechargement) ? "Non renseignée" : ligne.ZoneDechargement)</strong>
-                </div>
-
-                <div class="detail-field">
-                    <span>Dernière modification</span>
-                    <strong>@(ligne.DerniereModificationUtc.HasValue ? ligne.DerniereModificationUtc.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm") : "Non modifiée")</strong>
-                </div>
+            <div class="status-strip status-strip-warning">
+                <strong>Séparation métier</strong>
+                <span>Les commentaires exceptionnels sont saisis uniquement depuis l'interface Administration.</span>
             </div>
 
             <details class="technical-details">
@@ -114,7 +84,6 @@
                     var value = ligne.Quantites.TryGetValue(article.CodeArticle, out var quantite) ? quantite : null;
                     <div class="quantity-edit-item">
                         <input type="hidden" name="Quantites[@j].CodeArticle" value="@article.CodeArticle" />
-
                         <div>
                             <label for="detail-quantite-@j">@article.CodeArticle</label>
                             <small>@article.LibelleArticle</small>
@@ -150,7 +119,7 @@
             {
                 <div class="detail-form-actions">
                     <a class="button button-secondary" asp-action="Preparer" asp-route-codeTournee="@Model.CodeTournee">Retour</a>
-                    <button class="button button-final" type="submit">Valider ligne</button>
+                    <button class="button button-final" type="submit">@(isReadyForLock ? "Mettre à jour verrouillage" : "Valider ligne")</button>
                 </div>
             }
         </aside>
@@ -158,120 +127,16 @@
 </form>
 
 <style>
-    .detail-edit-form {
-        display: block;
-    }
-
-    .detail-field-info {
-        background: var(--surface-blue);
-        border-color: #bfdbfe;
-    }
-
-    .detail-field-editable textarea {
-        min-height: 44px;
-        resize: vertical;
-    }
-
-    .editable-title-row {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 12px;
-    }
-
-    .quantity-edit-list {
-        display: grid;
-        gap: 14px;
-        margin: 14px 0 18px;
-    }
-
-    .quantity-edit-item {
-        display: grid;
-        grid-template-columns: minmax(0, 1fr) 92px;
-        align-items: center;
-        gap: 12px;
-        padding: 14px;
-        border: 1px solid var(--border);
-        border-radius: 18px;
-        background: var(--surface-soft);
-    }
-
-    .quantity-edit-item label,
-    .quantity-edit-item small {
-        display: block;
-    }
-
-    .quantity-edit-item label {
-        font-size: 16px;
-        font-weight: 900;
-        color: var(--text);
-    }
-
-    .quantity-edit-item small {
-        margin-top: 4px;
-        color: var(--muted);
-        font-weight: 700;
-    }
-
-    .quantity-edit-item strong {
-        display: inline-flex;
-        justify-content: center;
-        align-items: center;
-        min-height: 42px;
-        border-radius: 12px;
-        background: #eef2f7;
-        font-size: 18px;
-    }
-
-    .quantity-input-with-marker {
-        position: relative;
-    }
-
-    .quantity-input-with-marker input {
-        text-align: center;
-        font-weight: 900;
-        padding-right: 34px;
-    }
-
-    .figma-marker {
-        display: inline-flex;
-        width: 28px;
-        height: 28px;
-        align-items: center;
-        justify-content: center;
-        border-radius: 999px;
-        background: #facc15;
-        color: #111827;
-        font-size: 13px;
-        font-weight: 900;
-        box-shadow: 0 8px 18px rgba(202, 138, 4, 0.28);
-        flex: 0 0 auto;
-    }
-
-    .quantity-input-with-marker .figma-marker {
-        position: absolute;
-        right: -10px;
-        top: -10px;
-    }
-
-    .detail-form-actions {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 12px;
-        margin-top: 18px;
-    }
-
-    .detail-form-actions .button {
-        width: 100%;
-    }
-
-    @@media (max-width: 760px) {
-        .quantity-edit-item {
-            grid-template-columns: 1fr;
-        }
-
-        .detail-form-actions {
-            grid-template-columns: 1fr;
-        }
-    }
+    .detail-edit-form { display: block; }
+    .detail-field-info { background: var(--surface-blue); border-color: #bfdbfe; }
+    .quantity-edit-list { display: grid; gap: 14px; margin: 14px 0 18px; }
+    .quantity-edit-item { display: grid; grid-template-columns: minmax(0, 1fr) 92px; align-items: center; gap: 12px; padding: 14px; border: 1px solid var(--border); border-radius: 18px; background: var(--surface-soft); }
+    .quantity-edit-item label, .quantity-edit-item small { display: block; }
+    .quantity-edit-item label { font-size: 16px; font-weight: 900; color: var(--text); }
+    .quantity-edit-item small { margin-top: 4px; color: var(--muted); font-weight: 700; }
+    .quantity-edit-item strong { display: inline-flex; justify-content: center; align-items: center; min-height: 42px; border-radius: 12px; background: #eef2f7; font-size: 18px; }
+    .quantity-input-with-marker input { text-align: center; font-weight: 900; }
+    .detail-form-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 18px; }
+    .detail-form-actions .button { width: 100%; }
+    @@media (max-width: 760px) { .quantity-edit-item { grid-template-columns: 1fr; } .detail-form-actions { grid-template-columns: 1fr; } }
 </style>

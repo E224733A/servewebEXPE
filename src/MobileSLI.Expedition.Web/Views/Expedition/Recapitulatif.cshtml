@@ -1,14 +1,14 @@
 @inject Microsoft.AspNetCore.Hosting.IWebHostEnvironment Env
 @model PreparationTourneeViewModel
 @{
-    ViewData["Title"] = "Récapitulatif";
+    ViewData["Title"] = "Expédition - Récapitulatif";
     var isDevelopment = string.Equals(Env.EnvironmentName, "Development", StringComparison.OrdinalIgnoreCase);
-    var isReadyForLock = string.Equals(Model.EtatPreparation, "PRETE_VERROUILLAGE", StringComparison.OrdinalIgnoreCase);
+    var isReadyForLock = string.Equals(Model.EtatPreparation, DraftStatuses.PretVerrouillage, StringComparison.OrdinalIgnoreCase);
 }
 
 <section class="screen-header">
     <div>
-        <p class="eyebrow">Récapitulatif avant verrouillage automatique</p>
+        <p class="eyebrow">Expédition · récapitulatif quantités</p>
         <h1>@Model.CodeTournee - @Model.LibelleTournee</h1>
         <p class="lead">
             Date tournée : @Model.DateTournee.ToString("dd/MM/yyyy") · état :
@@ -17,66 +17,37 @@
     </div>
     <div class="actions">
         <a class="button button-secondary" asp-action="Preparer" asp-route-codeTournee="@Model.CodeTournee">Retour préparation</a>
-        <a class="button button-secondary" asp-action="Tournees">Liste des tournées</a>
+        <a class="button button-secondary" asp-action="Tournees">Liste Expédition</a>
     </div>
 </section>
 
 <section class="metrics-row">
-    <article class="metric-card">
-        <span>Lignes</span>
-        <strong>@Model.NombreLignes</strong>
-    </article>
-    <article class="metric-card">
-        <span>Quantités renseignées</span>
-        <strong>@Model.NombreQuantitesRenseignees</strong>
-    </article>
-    <article class="metric-card">
-        <span>Commentaires</span>
-        <strong>@Model.NombreCommentaires</strong>
-    </article>
-    <article class="metric-card metric-card-warning">
-        <span>Verrouillage prévu</span>
-        <strong>00:05</strong>
-    </article>
+    <article class="metric-card"><span>Lignes</span><strong>@Model.NombreLignes</strong></article>
+    <article class="metric-card"><span>Quantités renseignées</span><strong>@Model.NombreQuantitesRenseignees</strong></article>
+    <article class="metric-card metric-card-warning"><span>Verrouillage prévu</span><strong>22h35</strong></article>
 </section>
 
 @if (!Model.IsReadOnly && !isReadyForLock)
 {
     <section class="panel">
-        <div class="section-header">
-            <h2>Prêt pour le verrouillage</h2>
-        </div>
-
+        <div class="section-header"><h2>Prêt pour le verrouillage</h2></div>
         <div class="status-strip status-strip-info">
             <strong>Prochaine étape</strong>
-            <span>
-                Vérifiez les valeurs ci-dessous. Quand vous êtes prêt, cliquez sur le bouton pour marquer cette tournée prête pour le verrouillage automatique.
-            </span>
+            <span>Vérifiez les quantités ci-dessous. Le commentaire exceptionnel n'est pas affiché dans l'interface Expédition.</span>
         </div>
-
-        <form asp-action="MarquerPretPourVerrouillage"
-              asp-route-codeTournee="@Model.CodeTournee"
-              method="post">
+        <form asp-action="MarquerPretPourVerrouillage" asp-route-codeTournee="@Model.CodeTournee" method="post">
             @Html.AntiForgeryToken()
-
-            <button type="submit" class="button button-success">
-                Marquer prêt pour verrouillage
-            </button>
+            <button type="submit" class="button button-success">Marquer prêt pour verrouillage</button>
         </form>
     </section>
 }
 else if (isReadyForLock && !Model.IsReadOnly)
 {
     <section class="panel">
-        <div class="section-header">
-            <h2>État du verrouillage</h2>
-        </div>
-
+        <div class="section-header"><h2>État du verrouillage</h2></div>
         <div class="status-strip status-strip-success">
             <strong>Tournée prête</strong>
-            <span>
-                Tournée prête pour le verrouillage automatique à 00:05.
-            </span>
+            <span>Tournée prête pour le verrouillage automatique à 22h35.</span>
         </div>
     </section>
 }
@@ -85,41 +56,26 @@ else if (isReadyForLock && !Model.IsReadOnly)
 {
     <section class="panel">
         <div class="section-header">
-            <div>
-                <p class="eyebrow">Développement uniquement</p>
-                <h2>Verrouillage manuel de test</h2>
-            </div>
+            <div><p class="eyebrow">Développement uniquement</p><h2>Verrouillage manuel de test</h2></div>
             <span class="badge badge-warning">DEV</span>
         </div>
-
         <div class="status-strip status-strip-warning">
             <strong>Attention</strong>
-            <span>
-                Ce bouton déclenche le même service que le verrouillage automatique de 00:05.
-                Il sert uniquement à tester le POST API de verrouillage et la sauvegarde SQL Server.
-            </span>
+            <span>Ce bouton déclenche le même service que le verrouillage automatique de 22h35. Il sert uniquement à tester le POST API de verrouillage.</span>
         </div>
-
         @if (isReadyForLock && !Model.IsReadOnly)
         {
-            <form asp-action="VerrouillerManuellementDeveloppement"
-                  method="post"
-                  data-loading-form>
+            <form asp-action="VerrouillerManuellementDeveloppement" method="post" data-loading-form>
                 @Html.AntiForgeryToken()
                 <input type="hidden" name="codeTournee" value="@Model.CodeTournee" />
-
-                <button type="submit" class="button button-final">
-                    Verrouiller maintenant en développement
-                </button>
+                <button type="submit" class="button button-final">Verrouiller maintenant en développement</button>
             </form>
         }
         else
         {
             <div class="status-strip status-strip-info">
                 <strong>Bouton indisponible</strong>
-                <span>
-                    La tournée doit être marquée PRETE_VERROUILLAGE et ne doit pas déjà être verrouillée.
-                </span>
+                <span>La tournée doit être marquée PRET_VERROUILLAGE et ne doit pas déjà être verrouillée.</span>
             </div>
         }
     </section>
@@ -127,18 +83,13 @@ else if (isReadyForLock && !Model.IsReadOnly)
 
 <section class="panel panel-table">
     <div class="section-header">
-        <div>
-            <p class="eyebrow">Contrôle final</p>
-            <h2>Valeurs qui seront transmises au verrouillage</h2>
-        </div>
-        <span class="badge badge-soft">Mobile alimenté uniquement après verrouillage BD</span>
+        <div><p class="eyebrow">Contrôle Expédition</p><h2>Quantités qui seront transmises au verrouillage</h2></div>
+        <span class="badge badge-soft">Quantités uniquement</span>
     </div>
-
     <div class="status-strip status-strip-info">
         <strong>Important</strong>
         <span>Le mobile ne lit pas ce brouillon. Les données seront disponibles uniquement après sauvegarde et verrouillage en SQL Server par l'API centrale.</span>
     </div>
-
     <div class="table-wrapper">
         <table class="data-table recap-table">
             <thead>
@@ -150,7 +101,6 @@ else if (isReadyForLock && !Model.IsReadOnly)
                     {
                         <th>@article.LibelleArticle</th>
                     }
-                    <th>Commentaire exceptionnel</th>
                     <th>Instructions</th>
                 </tr>
             </thead>
@@ -166,7 +116,6 @@ else if (isReadyForLock && !Model.IsReadOnly)
                             var value = ligne.Quantites.TryGetValue(article.CodeArticle, out var quantite) ? quantite : null;
                             <td>@(value.HasValue ? value.Value.ToString() : "Non renseigné")</td>
                         }
-                        <td class="long-text">@(string.IsNullOrWhiteSpace(ligne.CommentaireExceptionnel) ? "" : ligne.CommentaireExceptionnel)</td>
                         <td class="long-text">@(string.IsNullOrWhiteSpace(ligne.Instructions) ? "" : ligne.Instructions)</td>
                     </tr>
                 }

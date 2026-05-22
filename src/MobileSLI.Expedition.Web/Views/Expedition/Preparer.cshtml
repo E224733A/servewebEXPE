@@ -1,11 +1,18 @@
 @model PreparationTourneeViewModel
 @{
-    ViewData["Title"] = "Préparer une tournée";
+    ViewData["Title"] = "Expédition - Préparer une tournée";
+    static bool IsReadyForLockStatus(string? status)
+    {
+        var normalized = status?.Trim().ToUpperInvariant();
+        return normalized is "PRET_VERROUILLAGE" or "PRETE_VERROUILLAGE";
+    }
+
+    var isReadyForLock = IsReadyForLockStatus(Model.EtatPreparation);
 }
 
 <section class="screen-header">
     <div>
-        <p class="eyebrow">Préparation côté web</p>
+        <p class="eyebrow">Expédition · quantités uniquement</p>
         <h1>@Model.CodeTournee - @Model.LibelleTournee</h1>
         <p class="lead">
             Date tournée : @Model.DateTournee.ToString("dd/MM/yyyy") · état :
@@ -13,28 +20,16 @@
         </p>
     </div>
     <div class="actions">
-        <a class="button button-secondary" asp-action="Tournees">Liste des tournées</a>
-        <a class="button button-secondary" asp-action="Recapitulatif" asp-route-codeTournee="@Model.CodeTournee">Récapitulatif</a>
+        <a class="button button-secondary" asp-action="Tournees">Liste des tournées Expédition</a>
+        <a class="button button-secondary" asp-action="Recapitulatif" asp-route-codeTournee="@Model.CodeTournee">Récapitulatif quantités</a>
     </div>
 </section>
 
 <section class="metrics-row">
-    <article class="metric-card">
-        <span>Lignes</span>
-        <strong>@Model.NombreLignes</strong>
-    </article>
-    <article class="metric-card">
-        <span>Modifiées</span>
-        <strong>@Model.NombreLignesModifiees</strong>
-    </article>
-    <article class="metric-card">
-        <span>Commentaires</span>
-        <strong>@Model.NombreCommentaires</strong>
-    </article>
-    <article class="metric-card">
-        <span>Fermetures</span>
-        <strong>@Model.NombreFermeturesSignalees</strong>
-    </article>
+    <article class="metric-card"><span>Lignes</span><strong>@Model.NombreLignes</strong></article>
+    <article class="metric-card"><span>Lignes modifiées</span><strong>@Model.NombreLignesModifiees</strong></article>
+    <article class="metric-card"><span>Quantités renseignées</span><strong>@Model.NombreQuantitesRenseignees</strong></article>
+    <article class="metric-card"><span>Fermetures</span><strong>@Model.NombreFermeturesSignalees</strong></article>
 </section>
 
 @if (!ViewData.ModelState.IsValid)
@@ -47,19 +42,28 @@
 
 @if (Model.IsReadOnly)
 {
-    <div class="alert alert-info">Cette tournée est verrouillée en BD. La consultation reste possible, mais les champs sont en lecture seule.</div>
+    <div class="alert alert-info">Cette tournée est verrouillée. La consultation reste possible, mais les champs sont en lecture seule.</div>
+}
+else if (isReadyForLock)
+{
+    <div class="alert alert-info">
+        Cette tournée est prête pour verrouillage. Les quantités peuvent encore être corrigées tant que le verrouillage définitif n'a pas été accepté par l'API.
+        Une correction conserve l'état prêt pour verrouillage.
+    </div>
 }
 
-<form asp-action="Preparer"
-      asp-route-codeTournee="@Model.CodeTournee"
-      method="post"
-      data-loading-form>
+<form asp-action="Preparer" asp-route-codeTournee="@Model.CodeTournee" method="post" data-loading-form>
     @Html.AntiForgeryToken()
 
     <section class="panel panel-table">
         <div class="section-header compact">
             <h2>Lignes de tournée</h2>
-            <span class="badge badge-soft">Saisie locale · sauvegarde au bouton uniquement</span>
+            <span class="badge badge-soft">Saisie locale Expédition · quantités uniquement</span>
+        </div>
+
+        <div class="status-strip status-strip-warning">
+            <strong>Règle métier</strong>
+            <span>Les commentaires exceptionnels sont gérés uniquement dans l'interface Administration et ne sont pas affichés ici.</span>
         </div>
 
         <div class="table-wrapper">
@@ -72,7 +76,6 @@
                         {
                             <th class="quantity-heading">@article.LibelleArticle</th>
                         }
-                        <th>Commentaire exceptionnel</th>
                         <th>État</th>
                         <th>Détail</th>
                     </tr>
@@ -95,19 +98,15 @@
                                 var value = ligne.Quantites.TryGetValue(article.CodeArticle, out var quantite) ? quantite : null;
                                 <td class="quantity-cell">
                                     <input type="hidden" name="Lignes[@i].Quantites[@j].CodeArticle" value="@article.CodeArticle" />
-                                    <input
-                                        type="number"
-                                        min="0"
-                                        step="1"
-                                        name="Lignes[@i].Quantites[@j].QuantiteLivreePrevue"
-                                        value="@(value.HasValue ? value.Value.ToString() : string.Empty)"
-                                        placeholder="—"
-                                        @(Model.IsReadOnly ? "readonly" : string.Empty) />
+                                    <input type="number"
+                                           min="0"
+                                           step="1"
+                                           name="Lignes[@i].Quantites[@j].QuantiteLivreePrevue"
+                                           value="@(value.HasValue ? value.Value.ToString() : string.Empty)"
+                                           placeholder="—"
+                                           @(Model.IsReadOnly ? "readonly" : string.Empty) />
                                 </td>
                             }
-                            <td class="comment-cell">
-                                <textarea name="Lignes[@i].CommentaireExceptionnel" rows="1" placeholder="Commentaire" @(Model.IsReadOnly ? "readonly" : string.Empty)>@ligne.CommentaireExceptionnel</textarea>
-                            </td>
                             <td>
                                 @if (ligne.FermetureClient)
                                 {
@@ -123,10 +122,7 @@
                                 }
                             </td>
                             <td>
-                                <a class="button button-secondary button-small"
-                                   asp-action="DetailLigne"
-                                   asp-route-codeTournee="@Model.CodeTournee"
-                                   asp-route-idLigneSource="@ligne.IdLigneSource">Ouvrir</a>
+                                <a class="button button-secondary button-small" asp-action="DetailLigne" asp-route-codeTournee="@Model.CodeTournee" asp-route-idLigneSource="@ligne.IdLigneSource">Ouvrir</a>
                             </td>
                         </tr>
                     }
@@ -138,7 +134,9 @@
     @if (!Model.IsReadOnly)
     {
         <section class="sticky-actions">
-            <button class="button button-primary" type="submit" name="ActionType" value="recap">Enregistrer et voir le récapitulatif</button>
+            <button class="button button-primary" type="submit" name="ActionType" value="recap">
+                @(isReadyForLock ? "Mettre à jour verrouillage" : "Enregistrer et voir le récapitulatif")
+            </button>
         </section>
     }
 </form>

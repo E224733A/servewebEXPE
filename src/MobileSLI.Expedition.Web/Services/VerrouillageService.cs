@@ -1,10 +1,14 @@
+using Microsoft.Extensions.Options;
 using MobileSLI.Expedition.Web.Data;
 using MobileSLI.Expedition.Web.Models;
+using MobileSLI.Expedition.Web.Options;
 
 namespace MobileSLI.Expedition.Web.Services;
 
 public sealed class VerrouillageService
 {
+    private static readonly SemaphoreSlim ProcessLock = new(1, 1);
+
     private static readonly HashSet<string> SuccessStatuses = new(StringComparer.OrdinalIgnoreCase)
     {
         "SUCCESS",
@@ -14,12 +18,18 @@ public sealed class VerrouillageService
 
     private readonly IExpeditionDraftStore _draftStore;
     private readonly IExpeditionApiClient _apiClient;
+    private readonly VerrouillageOptions _options;
     private readonly ILogger<VerrouillageService> _logger;
 
-    public VerrouillageService(IExpeditionDraftStore draftStore, IExpeditionApiClient apiClient, ILogger<VerrouillageService> logger)
+    public VerrouillageService(
+        IExpeditionDraftStore draftStore,
+        IExpeditionApiClient apiClient,
+        IOptions<VerrouillageOptions> options,
+        ILogger<VerrouillageService> logger)
     {
         _draftStore = draftStore;
         _apiClient = apiClient;
+        _options = options.Value;
         _logger = logger;
     }
 
@@ -29,7 +39,8 @@ public sealed class VerrouillageService
             requestedAtLocal,
             lotSequence,
             cancellationToken,
-            ignorerVerrouillageDejaReussi: false);
+            ignorerVerrouillageDejaReussi: false,
+            bypassWindow: false);
 
         return result.IsSuccess;
     }
@@ -38,12 +49,67 @@ public sealed class VerrouillageService
         DateTimeOffset requestedAtLocal,
         string lotSequence,
         CancellationToken cancellationToken,
-        bool ignorerVerrouillageDejaReussi = false)
+        bool ignorerVerrouillageDejaReussi = false,
+        bool bypassWindow = false)
     {
-        var lot = await _draftStore.BuildLockLotAsync(requestedAtLocal, lotSequence, cancellationToken);
+        var timezone = ResolveTimeZone(_options.TimeZoneId);
+        var localNow = TimeZoneInfo.ConvertTime(requestedAtLocal, timezone);
+
+        if (!bypassWindow && !IsInsideLockWindow(localNow))
+        {
+            return VerrouillageRunResult.Failed(
+                $"Verrouillage refusé : l'heure {localNow:HH:mm:ss} est hors fenêtre autorisée {_options.Hour:00}:{_options.Minute:00} pendant {_options.WindowMinutes} minutes.");
+        }
+
+        if (!await ProcessLock.WaitAsync(0, cancellationToken))
+        {
+            return VerrouillageRunResult.Failed("Un verrouillage est déjà en cours. Nouvel appel refusé.");
+        }
+
+        try
+        {
+            var lockWindowStart = GetLockWindowStart(localNow);
+            return await RunOnceCoreAsync(lockWindowStart, lotSequence, cancellationToken, ignorerVerrouillageDejaReussi);
+        }
+        finally
+        {
+            ProcessLock.Release();
+        }
+    }
+
+    public async Task<VerrouillageRunResult> TryRunWithOneRetryAsync(
+        DateTimeOffset requestedAtLocal,
+        string lotSequence,
+        CancellationToken cancellationToken)
+    {
+        var first = await TryRunDetailedAsync(requestedAtLocal, lotSequence, cancellationToken);
+        if (first.IsSuccess || !first.LotBuilt || first.IsConflictOrValidationError)
+        {
+            return first;
+        }
+
+        await Task.Delay(TimeSpan.FromSeconds(60), cancellationToken);
+
+        var timezone = ResolveTimeZone(_options.TimeZoneId);
+        var retryNow = TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, timezone);
+        if (!IsInsideLockWindow(retryNow))
+        {
+            return VerrouillageRunResult.Failed("Retry automatique refusé : la fenêtre de verrouillage est dépassée.");
+        }
+
+        return await TryRunDetailedAsync(retryNow, lotSequence, cancellationToken);
+    }
+
+    private async Task<VerrouillageRunResult> RunOnceCoreAsync(
+        DateTimeOffset lockWindowStartLocal,
+        string lotSequence,
+        CancellationToken cancellationToken,
+        bool ignorerVerrouillageDejaReussi)
+    {
+        var lot = await _draftStore.BuildLockLotAsync(lockWindowStartLocal, lotSequence, cancellationToken);
         if (lot is null)
         {
-            _logger.LogDebug("Aucune tournée PRETE_VERROUILLAGE à verrouiller dans le stockage Expédition.");
+            _logger.LogDebug("Aucune tournée PRET_VERROUILLAGE à verrouiller dans le stockage SERVEXPE.");
             return VerrouillageRunResult.NoLot();
         }
 
@@ -51,7 +117,7 @@ public sealed class VerrouillageService
             && await _draftStore.HasSuccessfulLockAsync(lot.Request.DateTournee, cancellationToken))
         {
             _logger.LogInformation(
-                "Verrouillage Expédition automatique ignoré : un verrouillage réussi existe déjà pour la date {DateTournee}.",
+                "Verrouillage SERVEXPE ignoré : un verrouillage réussi existe déjà pour la date {DateTournee}.",
                 lot.Request.DateTournee);
 
             return VerrouillageRunResult.Success(
@@ -61,7 +127,7 @@ public sealed class VerrouillageService
         try
         {
             _logger.LogInformation(
-                "Envoi du lot Expédition {IdLot} vers l'API centrale avec {TourneesCount} tournée(s) prête(s).",
+                "Envoi du lot SERVEXPE {IdLot} vers l'API centrale avec {TourneesCount} tournée(s).",
                 lot.Request.IdLotVerrouillage,
                 lot.Request.Tournees.Count);
 
@@ -70,9 +136,8 @@ public sealed class VerrouillageService
             if (SuccessStatuses.Contains(response.Statut))
             {
                 await _draftStore.MarkLockSuccessAsync(response, lot.PayloadHash, cancellationToken);
-
                 return VerrouillageRunResult.Success(
-                    $"Verrouillage exécuté pour {lot.Request.Tournees.Count} tournée(s) PRETE_VERROUILLAGE. Vérifie l'historique et la base SQL Server.");
+                    $"Verrouillage exécuté pour {lot.Request.Tournees.Count} tournée(s). Lot : {lot.Request.IdLotVerrouillage}.");
             }
 
             await _draftStore.MarkLockFailureAsync(
@@ -83,27 +148,30 @@ public sealed class VerrouillageService
                 lot.PayloadHash,
                 cancellationToken);
 
-            return VerrouillageRunResult.Failed(
-                response.Message ?? "Verrouillage refusé par l'API centrale.");
+            return VerrouillageRunResult.Failed(response.Message ?? "Verrouillage refusé par l'API centrale.");
         }
         catch (ExpeditionApiException ex)
         {
+            var status = ex.ApiStatus ?? "API_ERROR";
             await _draftStore.MarkLockFailureAsync(
                 lot.Request.IdLotVerrouillage,
                 lot.Request.DateTournee,
-                ex.ApiStatus ?? "API_ERROR",
+                status,
                 ex.Message,
                 lot.PayloadHash,
                 cancellationToken);
 
             _logger.LogError(
                 ex,
-                "Erreur API pendant le verrouillage Expédition du lot {IdLot}. Réponse API : {ResponseBody}",
+                "Erreur API pendant le verrouillage SERVEXPE du lot {IdLot}. Réponse API : {ResponseBody}",
                 lot.Request.IdLotVerrouillage,
                 ex.ResponseBody);
 
             return VerrouillageRunResult.Failed(
-                $"API centrale ({ex.StatusCode}) : {ex.Message}");
+                $"API centrale ({ex.StatusCode}) : {ex.Message}",
+                isConflictOrValidationError: status.Contains("CONFLICT", StringComparison.OrdinalIgnoreCase)
+                                           || status.Contains("VALIDATION", StringComparison.OrdinalIgnoreCase)
+                                           || status.Contains("DATE_TOURNEE_EXPIREE", StringComparison.OrdinalIgnoreCase));
         }
         catch (Exception ex)
         {
@@ -115,10 +183,40 @@ public sealed class VerrouillageService
                 lot.PayloadHash,
                 cancellationToken);
 
-            _logger.LogError(ex, "Erreur technique pendant le verrouillage Expédition du lot {IdLot}.", lot.Request.IdLotVerrouillage);
+            _logger.LogError(ex, "Erreur technique pendant le verrouillage SERVEXPE du lot {IdLot}.", lot.Request.IdLotVerrouillage);
+            return VerrouillageRunResult.Failed($"Erreur technique pendant le verrouillage : {ex.Message}");
+        }
+    }
 
-            return VerrouillageRunResult.Failed(
-                $"Erreur technique pendant le verrouillage : {ex.Message}");
+    public DateTimeOffset GetExpectedLockStart(DateTimeOffset now)
+    {
+        var timezone = ResolveTimeZone(_options.TimeZoneId);
+        var localNow = TimeZoneInfo.ConvertTime(now, timezone);
+        return GetLockWindowStart(localNow);
+    }
+
+    private DateTimeOffset GetLockWindowStart(DateTimeOffset localNow)
+    {
+        return new DateTimeOffset(localNow.Year, localNow.Month, localNow.Day, _options.Hour, _options.Minute, 0, localNow.Offset);
+    }
+
+    private bool IsInsideLockWindow(DateTimeOffset localNow)
+    {
+        var start = new TimeOnly(_options.Hour, _options.Minute);
+        var current = TimeOnly.FromDateTime(localNow.DateTime);
+        var minutes = (current.ToTimeSpan() - start.ToTimeSpan()).TotalMinutes;
+        return minutes >= 0 && minutes < Math.Max(1, _options.WindowMinutes);
+    }
+
+    private static TimeZoneInfo ResolveTimeZone(string id)
+    {
+        try
+        {
+            return TimeZoneInfo.FindSystemTimeZoneById(id);
+        }
+        catch (TimeZoneNotFoundException)
+        {
+            return TimeZoneInfo.FindSystemTimeZoneById("Romance Standard Time");
         }
     }
 }
@@ -126,17 +224,14 @@ public sealed class VerrouillageService
 public sealed record VerrouillageRunResult(
     bool IsSuccess,
     bool LotBuilt,
-    string Message)
+    string Message,
+    bool IsConflictOrValidationError = false)
 {
     public static VerrouillageRunResult NoLot() =>
-        new(
-            false,
-            false,
-            "Aucune tournée prête pour verrouillage. Vérifie qu’au moins une tournée est en état PRETE_VERROUILLAGE.");
+        new(false, false, "Aucune tournée prête pour verrouillage. Vérifie qu’au moins une tournée est en état PRET_VERROUILLAGE.");
 
-    public static VerrouillageRunResult Success(string message) =>
-        new(true, true, message);
+    public static VerrouillageRunResult Success(string message) => new(true, true, message);
 
-    public static VerrouillageRunResult Failed(string message) =>
-        new(false, true, message);
+    public static VerrouillageRunResult Failed(string message, bool isConflictOrValidationError = false) =>
+        new(false, true, message, isConflictOrValidationError);
 }
