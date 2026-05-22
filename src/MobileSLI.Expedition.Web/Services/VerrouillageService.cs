@@ -114,15 +114,22 @@ public sealed class VerrouillageService
             return VerrouillageRunResult.NoLot();
         }
 
+        var codesTourneesLot = lot.Request.Tournees
+            .Select(t => t.CodeTournee)
+            .Where(code => !string.IsNullOrWhiteSpace(code))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
         if (!ignorerVerrouillageDejaReussi
-            && await _draftStore.HasSuccessfulLockAsync(lot.Request.DateTournee, cancellationToken))
+            && await _draftStore.HasSuccessfulLockAsync(lot.Request.DateTournee, codesTourneesLot, cancellationToken))
         {
             _logger.LogInformation(
-                "Verrouillage SERVEXPE ignoré : un verrouillage réussi existe déjà pour la date {DateTournee}.",
-                lot.Request.DateTournee);
+                "Verrouillage SERVEXPE ignoré : toutes les tournées du lot sont déjà verrouillées pour la date {DateTournee}. Tournées : {CodesTournees}.",
+                lot.Request.DateTournee,
+                string.Join(", ", codesTourneesLot));
 
             return VerrouillageRunResult.Success(
-                $"Verrouillage déjà effectué pour la date {lot.Request.DateTournee:dd/MM/yyyy}. Aucun nouvel appel API n'a été envoyé.");
+                $"Verrouillage déjà effectué pour les tournées du lot ({string.Join(", ", codesTourneesLot)}). Aucun nouvel appel API n'a été envoyé.");
         }
 
         try
@@ -132,14 +139,13 @@ public sealed class VerrouillageService
                 lot.Request.IdLotVerrouillage,
                 lot.Request.Tournees.Count);
 
-            // Diagnostic : sauvegarder le payload JSON réel pour inspection
             await SaveDebugPayloadAsync(lot.Request, cancellationToken);
 
             var response = await _apiClient.VerrouillerAsync(lot.Request, cancellationToken);
 
             if (SuccessStatuses.Contains(response.Statut))
             {
-                await _draftStore.MarkLockSuccessAsync(response, lot.PayloadHash, cancellationToken);
+                await _draftStore.MarkLockSuccessAsync(response, lot.PayloadHash, codesTourneesLot, cancellationToken);
                 return VerrouillageRunResult.Success(
                     $"Verrouillage exécuté pour {lot.Request.Tournees.Count} tournée(s). Lot : {lot.Request.IdLotVerrouillage}.");
             }
@@ -228,7 +234,6 @@ public sealed class VerrouillageService
     {
         try
         {
-            // Sauvegarder le payload JSON réel pour inspection et test cURL manuel
             var debugDir = Path.Combine(AppContext.BaseDirectory, "..", "..", "data");
             Directory.CreateDirectory(debugDir);
 

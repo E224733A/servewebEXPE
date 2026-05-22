@@ -22,9 +22,9 @@ public interface IExpeditionDraftStore
 
     Task<PreparedLockLot?> BuildLockLotAsync(DateTimeOffset requestedAtLocal, string lotSequence, CancellationToken cancellationToken);
 
-    Task<bool> HasSuccessfulLockAsync(DateOnly dateTournee, CancellationToken cancellationToken);
+    Task<bool> HasSuccessfulLockAsync(DateOnly dateTournee, IReadOnlyCollection<string> codeTournees, CancellationToken cancellationToken);
 
-    Task MarkLockSuccessAsync(ExpeditionLockResponse response, string payloadHash, CancellationToken cancellationToken);
+    Task MarkLockSuccessAsync(ExpeditionLockResponse response, string payloadHash, IReadOnlyCollection<string> codeTourneesVerrouillees, CancellationToken cancellationToken);
 
     Task MarkLockFailureAsync(string idLotVerrouillage, DateOnly dateTournee, string status, string message, string payloadHash, CancellationToken cancellationToken);
 

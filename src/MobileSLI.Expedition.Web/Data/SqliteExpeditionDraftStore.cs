@@ -15,6 +15,10 @@ namespace MobileSLI.Expedition.Web.Data;
 /// - Expedition_LineQuantity = quantités prévues saisies par l'Expédition ;
 /// - Admin_CommentaireDraft = commentaires exceptionnels saisis par l'Administration ;
 /// - Expedition_LockHistory = état du lot envoyé à l'API centrale.
+///
+/// Important : le blocage définitif se fait au niveau tournée, pas au niveau date.
+/// Une tournée déjà verrouillée devient non modifiable, mais les autres tournées de la même date restent modifiables.
+/// Le blocage global par date est réservé à l'état temporaire VERROUILLAGE_EN_COURS.
 /// </summary>
 public sealed class SqliteExpeditionDraftStore : IExpeditionDraftStore
 {
@@ -22,6 +26,7 @@ public sealed class SqliteExpeditionDraftStore : IExpeditionDraftStore
     private const string ApiSource = "APPLICATION_WEB_EXPEDITION";
     private const string ApiStatusReadyForLock = "PRETE_VERROUILLAGE";
     private const string ApiUser = "APPLICATION_WEB_EXPEDITION";
+
     private readonly ExpeditionDbOptions _options;
     private readonly ILogger<SqliteExpeditionDraftStore> _logger;
 
@@ -314,7 +319,7 @@ public sealed class SqliteExpeditionDraftStore : IExpeditionDraftStore
         await using var connection = CreateConnection();
         await connection.OpenAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
-        await EnsureWritableAsync(connection, transaction, dateTournee, cancellationToken);
+        await EnsureWritableAsync(connection, transaction, dateTournee, codeTournee, cancellationToken);
 
         await UpsertTourneeStateAsync(connection, transaction, dateTournee, codeTournee, status, now, remoteIp, cancellationToken);
 
@@ -355,7 +360,7 @@ public sealed class SqliteExpeditionDraftStore : IExpeditionDraftStore
         await using var connection = CreateConnection();
         await connection.OpenAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
-        await EnsureWritableAsync(connection, transaction, dateTournee, cancellationToken);
+        await EnsureWritableAsync(connection, transaction, dateTournee, codeTournee, cancellationToken);
 
         await ExecuteAsync(connection, transaction, """
             INSERT INTO Admin_CommentaireDraft(DateTournee, CodeTournee, IdLigneSource, CommentaireExceptionnel, StatutBrouillon, IsLocked, LastModifiedUtc, LastModifiedByIp)
@@ -393,6 +398,12 @@ public sealed class SqliteExpeditionDraftStore : IExpeditionDraftStore
         foreach (var tournee in load.Tournees.OrderBy(t => t.CodeTournee))
         {
             tourneeStates.TryGetValue(tournee.CodeTournee, out var tourneeState);
+
+            if (tournee.EstVerrouilleeBd || tourneeState?.IsLocked == true)
+            {
+                continue;
+            }
+
             var status = tourneeState?.Status ?? tournee.EtatPreparation;
             if (!IsReadyForLockStatus(status)) continue;
 
@@ -448,21 +459,47 @@ public sealed class SqliteExpeditionDraftStore : IExpeditionDraftStore
         return new PreparedLockLot { Request = request, PayloadHash = ComputeSha256(json) };
     }
 
-    public async Task<bool> HasSuccessfulLockAsync(DateOnly dateTournee, CancellationToken cancellationToken)
+    public async Task<bool> HasSuccessfulLockAsync(DateOnly dateTournee, IReadOnlyCollection<string> codeTournees, CancellationToken cancellationToken)
     {
+        if (codeTournees.Count == 0)
+        {
+            return false;
+        }
+
         await using var connection = CreateConnection();
         await connection.OpenAsync(cancellationToken);
-        await using var command = connection.CreateCommand();
-        command.CommandText = "SELECT 1 FROM Expedition_LockHistory WHERE DateTournee = $dateTournee AND Status IN ('SUCCESS','ALREADY_PROCESSED','ALREADY_LOCKED','ENVOYE','REJOUE_IDENTIQUE') LIMIT 1;";
-        command.Parameters.AddWithValue("$dateTournee", ToDbDate(dateTournee));
-        var value = await command.ExecuteScalarAsync(cancellationToken);
-        return value is not null && value != DBNull.Value;
+
+        foreach (var codeTournee in codeTournees.Where(code => !string.IsNullOrWhiteSpace(code)))
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                SELECT IsLocked
+                FROM Expedition_TourneeState
+                WHERE DateTournee = $dateTournee
+                  AND CodeTournee = $codeTournee
+                LIMIT 1;
+                """;
+            command.Parameters.AddWithValue("$dateTournee", ToDbDate(dateTournee));
+            command.Parameters.AddWithValue("$codeTournee", codeTournee);
+
+            var value = await command.ExecuteScalarAsync(cancellationToken);
+            if (value is null || value == DBNull.Value || Convert.ToInt32(value) != 1)
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
-    public async Task MarkLockSuccessAsync(ExpeditionLockResponse response, string payloadHash, CancellationToken cancellationToken)
+    public async Task MarkLockSuccessAsync(ExpeditionLockResponse response, string payloadHash, IReadOnlyCollection<string> codeTourneesVerrouillees, CancellationToken cancellationToken)
     {
         var now = DateTimeOffset.UtcNow;
         var lotStatus = string.Equals(response.Statut, "ALREADY_PROCESSED", StringComparison.OrdinalIgnoreCase) ? LotStatuses.RejoueIdentique : LotStatuses.Envoye;
+        var codes = codeTourneesVerrouillees
+            .Where(code => !string.IsNullOrWhiteSpace(code))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
 
         await using var connection = CreateConnection();
         await connection.OpenAsync(cancellationToken);
@@ -476,10 +513,45 @@ public sealed class SqliteExpeditionDraftStore : IExpeditionDraftStore
             ("$idLot", response.IdLotVerrouillage), ("$dateTournee", ToDbDate(response.DateTournee)), ("$status", lotStatus),
             ("$message", ToDbNullable(response.Message)), ("$payloadHash", payloadHash), ("$createdUtc", ToDbDateTime(now)), ("$processedUtc", ToDbDateTime(now)));
 
-        await ExecuteAsync(connection, transaction, "UPDATE Expedition_TourneeState SET Status = $status, IsLocked = 1, LastModifiedUtc = $now WHERE DateTournee = $dateTournee AND Status IN ('PRET_VERROUILLAGE','PRETE_VERROUILLAGE') AND IsLocked = 0;", cancellationToken,
-            ("$status", DraftStatuses.Verrouille), ("$now", ToDbDateTime(now)), ("$dateTournee", ToDbDate(response.DateTournee)));
-        await ExecuteAsync(connection, transaction, "UPDATE Expedition_LineDraft SET IsLocked = 1, LastModifiedUtc = $now WHERE DateTournee = $dateTournee;", cancellationToken, ("$now", ToDbDateTime(now)), ("$dateTournee", ToDbDate(response.DateTournee)));
-        await ExecuteAsync(connection, transaction, "UPDATE Admin_CommentaireDraft SET IsLocked = 1, StatutBrouillon = 'VERROUILLE', LastModifiedUtc = $now WHERE DateTournee = $dateTournee;", cancellationToken, ("$now", ToDbDateTime(now)), ("$dateTournee", ToDbDate(response.DateTournee)));
+        foreach (var codeTournee in codes)
+        {
+            await ExecuteAsync(connection, transaction, """
+                UPDATE Expedition_TourneeState
+                SET Status = $status,
+                    IsLocked = 1,
+                    LastModifiedUtc = $now
+                WHERE DateTournee = $dateTournee
+                  AND CodeTournee = $codeTournee
+                  AND IsLocked = 0;
+                """, cancellationToken,
+                ("$status", DraftStatuses.Verrouille),
+                ("$now", ToDbDateTime(now)),
+                ("$dateTournee", ToDbDate(response.DateTournee)),
+                ("$codeTournee", codeTournee));
+
+            await ExecuteAsync(connection, transaction, """
+                UPDATE Expedition_LineDraft
+                SET IsLocked = 1,
+                    LastModifiedUtc = $now
+                WHERE DateTournee = $dateTournee
+                  AND CodeTournee = $codeTournee;
+                """, cancellationToken,
+                ("$now", ToDbDateTime(now)),
+                ("$dateTournee", ToDbDate(response.DateTournee)),
+                ("$codeTournee", codeTournee));
+
+            await ExecuteAsync(connection, transaction, """
+                UPDATE Admin_CommentaireDraft
+                SET IsLocked = 1,
+                    StatutBrouillon = 'VERROUILLE',
+                    LastModifiedUtc = $now
+                WHERE DateTournee = $dateTournee
+                  AND CodeTournee = $codeTournee;
+                """, cancellationToken,
+                ("$now", ToDbDateTime(now)),
+                ("$dateTournee", ToDbDate(response.DateTournee)),
+                ("$codeTournee", codeTournee));
+        }
 
         await transaction.CommitAsync(cancellationToken);
     }
@@ -573,26 +645,46 @@ public sealed class SqliteExpeditionDraftStore : IExpeditionDraftStore
         return value == DBNull.Value ? null : value;
     }
 
-    private static async Task EnsureWritableAsync(SqliteConnection connection, System.Data.Common.DbTransaction transaction, DateOnly dateTournee, CancellationToken cancellationToken)
+    private static async Task EnsureWritableAsync(SqliteConnection connection, System.Data.Common.DbTransaction transaction, DateOnly dateTournee, string codeTournee, CancellationToken cancellationToken)
     {
-        await using var command = connection.CreateCommand();
-        command.Transaction = (SqliteTransaction)transaction;
-        command.CommandText = """
-            SELECT Status
-            FROM Expedition_LockHistory
-            WHERE DateTournee = $date
-              AND Status IN ('VERROUILLAGE_EN_COURS','ENVOYE','REJOUE_IDENTIQUE','CONFLIT')
-            ORDER BY CreatedUtc DESC
-            LIMIT 1;
-            """;
-        command.Parameters.AddWithValue("$date", ToDbDate(dateTournee));
-
-        var active = await command.ExecuteScalarAsync(cancellationToken);
-        if (active is string status)
+        await using (var command = connection.CreateCommand())
         {
-            throw new InvalidOperationException(status == LotStatuses.VerrouillageEnCours
-                ? "Verrouillage en cours : modification temporairement bloquée."
-                : "La préparation est verrouillée ou en conflit. Modification refusée.");
+            command.Transaction = (SqliteTransaction)transaction;
+            command.CommandText = """
+                SELECT Status
+                FROM Expedition_LockHistory
+                WHERE DateTournee = $date
+                  AND Status = 'VERROUILLAGE_EN_COURS'
+                ORDER BY CreatedUtc DESC
+                LIMIT 1;
+                """;
+            command.Parameters.AddWithValue("$date", ToDbDate(dateTournee));
+
+            var active = await command.ExecuteScalarAsync(cancellationToken);
+            if (active is string)
+            {
+                throw new InvalidOperationException("Verrouillage en cours : modification temporairement bloquée.");
+            }
+        }
+
+        await using (var command = connection.CreateCommand())
+        {
+            command.Transaction = (SqliteTransaction)transaction;
+            command.CommandText = """
+                SELECT IsLocked
+                FROM Expedition_TourneeState
+                WHERE DateTournee = $date
+                  AND CodeTournee = $codeTournee
+                LIMIT 1;
+                """;
+            command.Parameters.AddWithValue("$date", ToDbDate(dateTournee));
+            command.Parameters.AddWithValue("$codeTournee", codeTournee);
+
+            var locked = await command.ExecuteScalarAsync(cancellationToken);
+            if (locked is not null && locked != DBNull.Value && Convert.ToInt32(locked) == 1)
+            {
+                throw new InvalidOperationException("Cette tournée est déjà verrouillée côté API. Modification refusée.");
+            }
         }
     }
 
@@ -656,7 +748,7 @@ public sealed class SqliteExpeditionDraftStore : IExpeditionDraftStore
     private static bool IsReadyForLockStatus(string? status)
     {
         var normalized = status?.Trim().TrimEnd('.');
-        return string.Equals(normalized, DraftStatuses.PretVerrouillage, StringComparison.OrdinalIgnoreCase)
+        return string.Equals(normalized, StatusReadyForLock, StringComparison.OrdinalIgnoreCase)
             || string.Equals(normalized, "PRETE_VERROUILLAGE", StringComparison.OrdinalIgnoreCase);
     }
 
