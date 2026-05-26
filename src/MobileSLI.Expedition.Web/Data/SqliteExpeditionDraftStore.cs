@@ -26,6 +26,8 @@ public sealed class SqliteExpeditionDraftStore : IExpeditionDraftStore
     private const string ApiSource = "APPLICATION_WEB_EXPEDITION";
     private const string ApiStatusReadyForLock = "PRETE_VERROUILLAGE";
     private const string ApiUser = "APPLICATION_WEB_EXPEDITION";
+    private const int DraftRetentionDays = 14;
+    private const int LockHistoryRetentionDays = 90;
 
     private readonly ExpeditionDbOptions _options;
     private readonly ILogger<SqliteExpeditionDraftStore> _logger;
@@ -136,6 +138,76 @@ public sealed class SqliteExpeditionDraftStore : IExpeditionDraftStore
         _logger.LogInformation("Stockage SQLite SERVEXPE initialisé : {DatabasePath}", GetDatabasePath());
     }
 
+    public async Task CleanupOldDataAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var today = DateOnly.FromDateTime(DateTime.Now);
+            var draftCutoffDate = today.AddDays(-DraftRetentionDays);
+            var lockHistoryCutoffUtc = DateTimeOffset.UtcNow.AddDays(-LockHistoryRetentionDays);
+
+            await using var connection = CreateConnection();
+            await connection.OpenAsync(cancellationToken);
+            await ExecuteAsync(connection, "PRAGMA busy_timeout = 5000;", cancellationToken);
+            await ExecuteAsync(connection, "PRAGMA foreign_keys = ON;", cancellationToken);
+
+            await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+            await ExecuteAsync(connection, transaction, """
+                DELETE FROM Expedition_LineQuantity
+                WHERE DateTournee < $draftCutoffDate;
+                """, cancellationToken,
+                ("$draftCutoffDate", ToDbDate(draftCutoffDate)));
+
+            await ExecuteAsync(connection, transaction, """
+                DELETE FROM Expedition_LineDraft
+                WHERE DateTournee < $draftCutoffDate;
+                """, cancellationToken,
+                ("$draftCutoffDate", ToDbDate(draftCutoffDate)));
+
+            await ExecuteAsync(connection, transaction, """
+                DELETE FROM Admin_CommentaireDraft
+                WHERE DateTournee < $draftCutoffDate;
+                """, cancellationToken,
+                ("$draftCutoffDate", ToDbDate(draftCutoffDate)));
+
+            await ExecuteAsync(connection, transaction, """
+                DELETE FROM Expedition_TourneeState
+                WHERE DateTournee < $draftCutoffDate;
+                """, cancellationToken,
+                ("$draftCutoffDate", ToDbDate(draftCutoffDate)));
+
+            await ExecuteAsync(connection, transaction, """
+                DELETE FROM Expedition_LoadedData
+                WHERE DateTournee < $draftCutoffDate;
+                """, cancellationToken,
+                ("$draftCutoffDate", ToDbDate(draftCutoffDate)));
+
+            await ExecuteAsync(connection, transaction, """
+                DELETE FROM Expedition_LockHistory
+                WHERE CreatedUtc < $lockHistoryCutoffUtc;
+                """, cancellationToken,
+                ("$lockHistoryCutoffUtc", ToDbDateTime(lockHistoryCutoffUtc)));
+
+            await transaction.CommitAsync(cancellationToken);
+
+            await ExecuteAsync(connection, "PRAGMA optimize;", cancellationToken);
+
+            _logger.LogInformation(
+                "Purge SQLite SERVEXPE exécutée. Brouillons conservés depuis {DraftCutoffDate}. Historique verrouillage conservé depuis {LockHistoryCutoffUtc}.",
+                draftCutoffDate,
+                lockHistoryCutoffUtc);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "La purge SQLite SERVEXPE a échoué. Le fonctionnement métier continue.");
+        }
+    }
+
     public async Task SaveLoadedDataAsync(ExpeditionLoadResponse response, CancellationToken cancellationToken)
     {
         var now = DateTimeOffset.UtcNow;
@@ -179,6 +251,8 @@ public sealed class SqliteExpeditionDraftStore : IExpeditionDraftStore
         }
 
         await transaction.CommitAsync(cancellationToken);
+
+        await CleanupOldDataAsync(cancellationToken);
     }
 
     public async Task<ExpeditionLoadResponse?> GetLastLoadedDataAsync(CancellationToken cancellationToken)

@@ -16,7 +16,8 @@ public sealed class ExpeditionStartupService : IHostedService
     public async Task StartAsync(CancellationToken cancellationToken)
     {
         await _draftStore.InitializeAsync(cancellationToken);
-        _logger.LogInformation("Stockage SQLite Expédition initialisé.");
+        await _draftStore.CleanupOldDataAsync(cancellationToken);
+        _logger.LogInformation("Stockage SQLite Expédition initialisé et purge de démarrage exécutée.");
     }
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;

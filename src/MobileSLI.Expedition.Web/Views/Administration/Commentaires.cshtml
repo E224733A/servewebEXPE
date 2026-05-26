@@ -239,23 +239,3 @@ else
         }
     }
 </style>
-
-<script>
-    document.querySelectorAll('[data-commentaire-exceptionnel]').forEach((textarea) => {
-        const form = textarea.closest('.admin-comment-form');
-        const counter = form?.querySelector('[data-commentaire-counter]');
-        const max = 400;
-
-        const updateCounter = () => {
-            const length = textarea.value.length;
-
-            if (counter) {
-                counter.textContent = `${length} / ${max} caractères`;
-                counter.classList.toggle('is-limit', length >= max);
-            }
-        };
-
-        textarea.addEventListener('input', updateCounter);
-        updateCounter();
-    });
-</script>

@@ -6,6 +6,8 @@ public interface IExpeditionDraftStore
 {
     Task InitializeAsync(CancellationToken cancellationToken);
 
+    Task CleanupOldDataAsync(CancellationToken cancellationToken);
+
     Task SaveLoadedDataAsync(ExpeditionLoadResponse response, CancellationToken cancellationToken);
 
     Task<ExpeditionLoadResponse?> GetLastLoadedDataAsync(CancellationToken cancellationToken);
