@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using MobileSLI.Expedition.Web.Models;
 
 namespace MobileSLI.Expedition.Web.ViewModels;
@@ -87,5 +88,6 @@ public sealed class AdminCommentaireInputModel
 {
     public string IdLigneSource { get; set; } = string.Empty;
 
+    [StringLength(400, ErrorMessage = "Le commentaire exceptionnel ne doit pas dépasser 400 caractères.")]
     public string? CommentaireExceptionnel { get; set; }
 }

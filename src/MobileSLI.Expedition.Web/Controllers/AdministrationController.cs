@@ -158,6 +158,12 @@ public sealed class AdministrationController : Controller
             return RedirectToAction(nameof(Commentaires), new { codeTournee });
         }
 
+        if (!ModelState.IsValid)
+        {
+            TempData["Error"] = "Le commentaire exceptionnel ne doit pas dépasser 400 caractères.";
+            return RedirectToAction(nameof(Commentaires), new { codeTournee });
+        }
+
         try
         {
             await _draftStore.SaveAdminCommentaireAsync(

@@ -61,6 +61,8 @@ else
         @foreach (var ligne in Model.Lignes)
         {
             var hasComment = !string.IsNullOrWhiteSpace(ligne.CommentaireExceptionnel);
+            var commentaireLength = (ligne.CommentaireExceptionnel ?? string.Empty).Length;
+
             <article class="admin-comment-card @(hasComment ? "has-comment" : string.Empty)">
                 <div class="admin-comment-client">
                     <div class="admin-comment-order">Arrêt @ligne.OrdreArret</div>
@@ -87,8 +89,14 @@ else
                     <textarea id="commentaire-@ligne.OrdreArret"
                               name="CommentaireExceptionnel"
                               rows="3"
+                              maxlength="400"
+                              data-commentaire-exceptionnel
                               placeholder="Exemple : prévenir avant passage, accès spécifique, consigne ponctuelle..."
                               @(Model.IsReadOnly ? "readonly" : string.Empty)>@ligne.CommentaireExceptionnel</textarea>
+
+                    <small class="admin-comment-counter @(commentaireLength >= 400 ? "is-limit" : string.Empty)" data-commentaire-counter>
+                        @commentaireLength / 400 caractères
+                    </small>
 
                     <div class="admin-comment-actions">
                         @if (hasComment)
@@ -189,6 +197,8 @@ else
         display: block;
         color: var(--text);
         line-height: 1.35;
+        overflow-wrap: anywhere;
+        word-break: break-word;
     }
 
     .admin-comment-form {
@@ -199,6 +209,21 @@ else
     .admin-comment-form textarea {
         min-height: 76px;
         resize: vertical;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+    }
+
+    .admin-comment-counter {
+        display: block;
+        margin-top: -4px;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 800;
+        text-align: right;
+    }
+
+    .admin-comment-counter.is-limit {
+        color: #b91c1c;
     }
 
     .admin-comment-actions {
@@ -214,3 +239,23 @@ else
         }
     }
 </style>
+
+<script>
+    document.querySelectorAll('[data-commentaire-exceptionnel]').forEach((textarea) => {
+        const form = textarea.closest('.admin-comment-form');
+        const counter = form?.querySelector('[data-commentaire-counter]');
+        const max = 400;
+
+        const updateCounter = () => {
+            const length = textarea.value.length;
+
+            if (counter) {
+                counter.textContent = `${length} / ${max} caractères`;
+                counter.classList.toggle('is-limit', length >= max);
+            }
+        };
+
+        textarea.addEventListener('input', updateCounter);
+        updateCounter();
+    });
+</script>
