@@ -353,7 +353,7 @@ public sealed class ExpeditionController : Controller
     {
         var defaults = new[]
         {
-            new ArticleSuiviDto { CodeArticle = "ROLLS", LibelleArticle = "Rolls pleins", TypeQuantite = "LIVREE_PREVUE" },
+            new ArticleSuiviDto { CodeArticle = "ROLLS", LibelleArticle = "Chariots", TypeQuantite = "LIVREE_PREVUE" },
             new ArticleSuiviDto { CodeArticle = "ROLLS_VIDES", LibelleArticle = "Chariots vides", TypeQuantite = "LIVREE_PREVUE" },
             new ArticleSuiviDto { CodeArticle = "TAPIS", LibelleArticle = "Tapis", TypeQuantite = "LIVREE_PREVUE" },
             new ArticleSuiviDto { CodeArticle = "SACS", LibelleArticle = "Sacs", TypeQuantite = "LIVREE_PREVUE" }
