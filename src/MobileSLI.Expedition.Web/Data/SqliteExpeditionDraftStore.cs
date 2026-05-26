@@ -812,7 +812,8 @@ public sealed class SqliteExpeditionDraftStore : IExpeditionDraftStore
     {
         var defaults = new[]
         {
-            new ArticleSuiviDto { CodeArticle = "ROLLS", LibelleArticle = "Rolls", TypeQuantite = "LIVREE_PREVUE" },
+            new ArticleSuiviDto { CodeArticle = "ROLLS", LibelleArticle = "Rolls pleins", TypeQuantite = "LIVREE_PREVUE" },
+            new ArticleSuiviDto { CodeArticle = "ROLLS_VIDES", LibelleArticle = "Chariots vides", TypeQuantite = "LIVREE_PREVUE" },
             new ArticleSuiviDto { CodeArticle = "TAPIS", LibelleArticle = "Tapis", TypeQuantite = "LIVREE_PREVUE" },
             new ArticleSuiviDto { CodeArticle = "SACS", LibelleArticle = "Sacs", TypeQuantite = "LIVREE_PREVUE" }
         };
@@ -828,6 +829,7 @@ public sealed class SqliteExpeditionDraftStore : IExpeditionDraftStore
 
     private static bool IsPreparedArticle(string codeArticle) =>
         string.Equals(codeArticle, "ROLLS", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(codeArticle, "ROLLS_VIDES", StringComparison.OrdinalIgnoreCase)
         || string.Equals(codeArticle, "TAPIS", StringComparison.OrdinalIgnoreCase)
         || string.Equals(codeArticle, "SACS", StringComparison.OrdinalIgnoreCase);
 
