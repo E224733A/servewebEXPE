@@ -446,10 +446,19 @@ public sealed class ExpeditionController : Controller
         var effectiveStatus = ResolveStatusAfterExpeditionUpdate(status, state?.Status);
         var statusConservePretVerrouillage = IsReadyForLockStatus(state?.Status)
             && string.Equals(status, DraftStatuses.Brouillon, StringComparison.OrdinalIgnoreCase);
+        var enregistrerClicPretVerrouillage = string.Equals(status, DraftStatuses.PretVerrouillage, StringComparison.OrdinalIgnoreCase);
 
         try
         {
-            await _draftStore.SavePreparationAsync(load.DateTournee, codeTournee, drafts, effectiveStatus, HttpContext.Connection.RemoteIpAddress?.ToString(), cancellationToken);
+            await _draftStore.SavePreparationAsync(
+                load.DateTournee,
+                codeTournee,
+                drafts,
+                effectiveStatus,
+                HttpContext.Connection.RemoteIpAddress?.ToString(),
+                cancellationToken,
+                enregistrerClicPretVerrouillage);
+
             return SavePreparationResult.Ok(statusConservePretVerrouillage);
         }
         catch (InvalidOperationException ex)

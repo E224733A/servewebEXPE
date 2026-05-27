@@ -19,6 +19,12 @@ namespace MobileSLI.Expedition.Web.Data;
 /// Important : le blocage définitif se fait au niveau tournée, pas au niveau date.
 /// Une tournée déjà verrouillée devient non modifiable, mais les autres tournées de la même date restent modifiables.
 /// Le blocage global par date est réservé à l'état temporaire VERROUILLAGE_EN_COURS.
+///
+/// Règle de traçabilité simple :
+/// - Expedition_TourneeState.LastModifiedUtc représente l'heure du dernier clic humain
+///   "Marquer prête pour verrouillage" quand la tournée est en PRET_VERROUILLAGE / PRETE_VERROUILLAGE ;
+/// - cette heure est envoyée dans TourneeLockDto.DateModification au verrouillage de nuit ;
+/// - elle ne doit pas être remplacée par DateVerrouillageDemandee, qui correspond au traitement automatique.
 /// </summary>
 public sealed class SqliteExpeditionDraftStore : IExpeditionDraftStore
 {
@@ -153,44 +159,14 @@ public sealed class SqliteExpeditionDraftStore : IExpeditionDraftStore
 
             await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
-            await ExecuteAsync(connection, transaction, """
-                DELETE FROM Expedition_LineQuantity
-                WHERE DateTournee < $draftCutoffDate;
-                """, cancellationToken,
-                ("$draftCutoffDate", ToDbDate(draftCutoffDate)));
-
-            await ExecuteAsync(connection, transaction, """
-                DELETE FROM Expedition_LineDraft
-                WHERE DateTournee < $draftCutoffDate;
-                """, cancellationToken,
-                ("$draftCutoffDate", ToDbDate(draftCutoffDate)));
-
-            await ExecuteAsync(connection, transaction, """
-                DELETE FROM Admin_CommentaireDraft
-                WHERE DateTournee < $draftCutoffDate;
-                """, cancellationToken,
-                ("$draftCutoffDate", ToDbDate(draftCutoffDate)));
-
-            await ExecuteAsync(connection, transaction, """
-                DELETE FROM Expedition_TourneeState
-                WHERE DateTournee < $draftCutoffDate;
-                """, cancellationToken,
-                ("$draftCutoffDate", ToDbDate(draftCutoffDate)));
-
-            await ExecuteAsync(connection, transaction, """
-                DELETE FROM Expedition_LoadedData
-                WHERE DateTournee < $draftCutoffDate;
-                """, cancellationToken,
-                ("$draftCutoffDate", ToDbDate(draftCutoffDate)));
-
-            await ExecuteAsync(connection, transaction, """
-                DELETE FROM Expedition_LockHistory
-                WHERE CreatedUtc < $lockHistoryCutoffUtc;
-                """, cancellationToken,
-                ("$lockHistoryCutoffUtc", ToDbDateTime(lockHistoryCutoffUtc)));
+            await ExecuteAsync(connection, transaction, "DELETE FROM Expedition_LineQuantity WHERE DateTournee < $draftCutoffDate;", cancellationToken, ("$draftCutoffDate", ToDbDate(draftCutoffDate)));
+            await ExecuteAsync(connection, transaction, "DELETE FROM Expedition_LineDraft WHERE DateTournee < $draftCutoffDate;", cancellationToken, ("$draftCutoffDate", ToDbDate(draftCutoffDate)));
+            await ExecuteAsync(connection, transaction, "DELETE FROM Admin_CommentaireDraft WHERE DateTournee < $draftCutoffDate;", cancellationToken, ("$draftCutoffDate", ToDbDate(draftCutoffDate)));
+            await ExecuteAsync(connection, transaction, "DELETE FROM Expedition_TourneeState WHERE DateTournee < $draftCutoffDate;", cancellationToken, ("$draftCutoffDate", ToDbDate(draftCutoffDate)));
+            await ExecuteAsync(connection, transaction, "DELETE FROM Expedition_LoadedData WHERE DateTournee < $draftCutoffDate;", cancellationToken, ("$draftCutoffDate", ToDbDate(draftCutoffDate)));
+            await ExecuteAsync(connection, transaction, "DELETE FROM Expedition_LockHistory WHERE CreatedUtc < $lockHistoryCutoffUtc;", cancellationToken, ("$lockHistoryCutoffUtc", ToDbDateTime(lockHistoryCutoffUtc)));
 
             await transaction.CommitAsync(cancellationToken);
-
             await ExecuteAsync(connection, "PRAGMA optimize;", cancellationToken);
 
             _logger.LogInformation(
@@ -234,13 +210,17 @@ public sealed class SqliteExpeditionDraftStore : IExpeditionDraftStore
                 ON CONFLICT(DateTournee, CodeTournee) DO UPDATE SET
                     Status = CASE
                         WHEN Expedition_TourneeState.IsLocked = 1 THEN Expedition_TourneeState.Status
-                        WHEN Expedition_TourneeState.Status IN ('BROUILLON', 'PRET_VERROUILLAGE', 'VERROUILLAGE_EN_COURS') THEN Expedition_TourneeState.Status
+                        WHEN Expedition_TourneeState.Status IN ('BROUILLON', 'PRET_VERROUILLAGE', 'PRETE_VERROUILLAGE', 'VERROUILLAGE_EN_COURS') THEN Expedition_TourneeState.Status
                         ELSE excluded.Status
                     END,
                     IsLocked = CASE WHEN Expedition_TourneeState.IsLocked = 1 THEN 1 ELSE excluded.IsLocked END,
                     LastModifiedUtc = CASE
-                        WHEN Expedition_TourneeState.Status IN ('BROUILLON', 'PRET_VERROUILLAGE', 'VERROUILLAGE_EN_COURS') THEN Expedition_TourneeState.LastModifiedUtc
+                        WHEN Expedition_TourneeState.Status IN ('BROUILLON', 'PRET_VERROUILLAGE', 'PRETE_VERROUILLAGE', 'VERROUILLAGE_EN_COURS') THEN Expedition_TourneeState.LastModifiedUtc
                         ELSE excluded.LastModifiedUtc
+                    END,
+                    LastModifiedByIp = CASE
+                        WHEN Expedition_TourneeState.Status IN ('BROUILLON', 'PRET_VERROUILLAGE', 'PRETE_VERROUILLAGE', 'VERROUILLAGE_EN_COURS') THEN Expedition_TourneeState.LastModifiedByIp
+                        ELSE excluded.LastModifiedByIp
                     END;
                 """, cancellationToken,
                 ("$dateTournee", ToDbDate(response.DateTournee)),
@@ -251,7 +231,6 @@ public sealed class SqliteExpeditionDraftStore : IExpeditionDraftStore
         }
 
         await transaction.CommitAsync(cancellationToken);
-
         await CleanupOldDataAsync(cancellationToken);
     }
 
@@ -387,7 +366,14 @@ public sealed class SqliteExpeditionDraftStore : IExpeditionDraftStore
         return result;
     }
 
-    public async Task SavePreparationAsync(DateOnly dateTournee, string codeTournee, IReadOnlyList<SavePreparationLineDraft> lines, string status, string? remoteIp, CancellationToken cancellationToken)
+    public async Task SavePreparationAsync(
+        DateOnly dateTournee,
+        string codeTournee,
+        IReadOnlyList<SavePreparationLineDraft> lines,
+        string status,
+        string? remoteIp,
+        CancellationToken cancellationToken,
+        bool enregistrerClicPretVerrouillage = false)
     {
         var now = DateTimeOffset.UtcNow;
         await using var connection = CreateConnection();
@@ -395,7 +381,16 @@ public sealed class SqliteExpeditionDraftStore : IExpeditionDraftStore
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         await EnsureWritableAsync(connection, transaction, dateTournee, codeTournee, cancellationToken);
 
-        await UpsertTourneeStateAsync(connection, transaction, dateTournee, codeTournee, status, now, remoteIp, cancellationToken);
+        await UpsertTourneeStateAsync(
+            connection,
+            transaction,
+            dateTournee,
+            codeTournee,
+            status,
+            now,
+            remoteIp,
+            enregistrerClicPretVerrouillage,
+            cancellationToken);
 
         foreach (var line in lines)
         {
@@ -481,6 +476,7 @@ public sealed class SqliteExpeditionDraftStore : IExpeditionDraftStore
             var status = tourneeState?.Status ?? tournee.EtatPreparation;
             if (!IsReadyForLockStatus(status)) continue;
 
+            var dateDernierClicPret = tourneeState?.LastModifiedUtc ?? requestedAtLocal;
             var lineStates = await GetLineStatesAsync(load.DateTournee, tournee.CodeTournee, cancellationToken);
             var lineDtos = new List<LigneLockDto>();
 
@@ -508,7 +504,7 @@ public sealed class SqliteExpeditionDraftStore : IExpeditionDraftStore
                     Quantites = quantites,
                     DerniereModification = new DerniereModificationDto
                     {
-                        Date = requestedAtLocal,
+                        Date = dateDernierClicPret,
                         Utilisateur = ApiUser
                     }
                 });
@@ -519,6 +515,7 @@ public sealed class SqliteExpeditionDraftStore : IExpeditionDraftStore
                 CodeTournee = tournee.CodeTournee,
                 LibelleTournee = tournee.LibelleTournee,
                 StatutPreparationWeb = ApiStatusReadyForLock,
+                DateModification = dateDernierClicPret,
                 Lignes = lineDtos
             });
         }
@@ -592,14 +589,12 @@ public sealed class SqliteExpeditionDraftStore : IExpeditionDraftStore
             await ExecuteAsync(connection, transaction, """
                 UPDATE Expedition_TourneeState
                 SET Status = $status,
-                    IsLocked = 1,
-                    LastModifiedUtc = $now
+                    IsLocked = 1
                 WHERE DateTournee = $dateTournee
                   AND CodeTournee = $codeTournee
                   AND IsLocked = 0;
                 """, cancellationToken,
                 ("$status", DraftStatuses.Verrouille),
-                ("$now", ToDbDateTime(now)),
                 ("$dateTournee", ToDbDate(response.DateTournee)),
                 ("$codeTournee", codeTournee));
 
@@ -762,14 +757,39 @@ public sealed class SqliteExpeditionDraftStore : IExpeditionDraftStore
         }
     }
 
-    private static async Task UpsertTourneeStateAsync(SqliteConnection connection, System.Data.Common.DbTransaction transaction, DateOnly dateTournee, string codeTournee, string status, DateTimeOffset now, string? remoteIp, CancellationToken cancellationToken)
+    private static async Task UpsertTourneeStateAsync(
+        SqliteConnection connection,
+        System.Data.Common.DbTransaction transaction,
+        DateOnly dateTournee,
+        string codeTournee,
+        string status,
+        DateTimeOffset now,
+        string? remoteIp,
+        bool enregistrerClicPretVerrouillage,
+        CancellationToken cancellationToken)
     {
+        var conserverDernierClicPret = IsReadyForLockStatus(status) && !enregistrerClicPretVerrouillage;
+
         await ExecuteAsync(connection, transaction, """
             INSERT INTO Expedition_TourneeState(DateTournee, CodeTournee, Status, IsLocked, LastModifiedUtc, LastModifiedByIp)
             VALUES ($dateTournee, $codeTournee, $status, 0, $lastModifiedUtc, $ip)
-            ON CONFLICT(DateTournee, CodeTournee) DO UPDATE SET Status = excluded.Status, LastModifiedUtc = excluded.LastModifiedUtc, LastModifiedByIp = excluded.LastModifiedByIp;
+            ON CONFLICT(DateTournee, CodeTournee) DO UPDATE SET
+                Status = excluded.Status,
+                LastModifiedUtc = CASE
+                    WHEN $conserverDernierClicPret = 1 THEN Expedition_TourneeState.LastModifiedUtc
+                    ELSE excluded.LastModifiedUtc
+                END,
+                LastModifiedByIp = CASE
+                    WHEN $conserverDernierClicPret = 1 THEN Expedition_TourneeState.LastModifiedByIp
+                    ELSE excluded.LastModifiedByIp
+                END;
             """, cancellationToken,
-            ("$dateTournee", ToDbDate(dateTournee)), ("$codeTournee", codeTournee), ("$status", status), ("$lastModifiedUtc", ToDbDateTime(now)), ("$ip", ToDbNullable(remoteIp)));
+            ("$dateTournee", ToDbDate(dateTournee)),
+            ("$codeTournee", codeTournee),
+            ("$status", status),
+            ("$lastModifiedUtc", ToDbDateTime(now)),
+            ("$ip", ToDbNullable(remoteIp)),
+            ("$conserverDernierClicPret", conserverDernierClicPret ? 1 : 0));
     }
 
     private SqliteConnection CreateConnection() => new($"Data Source={GetDatabasePath()};Cache=Shared");

@@ -18,7 +18,14 @@ public interface IExpeditionDraftStore
 
     Task<IReadOnlyDictionary<string, LineDraftState>> GetLineStatesAsync(DateOnly dateTournee, string codeTournee, CancellationToken cancellationToken);
 
-    Task SavePreparationAsync(DateOnly dateTournee, string codeTournee, IReadOnlyList<SavePreparationLineDraft> lignes, string status, string? modifiedBy, CancellationToken cancellationToken);
+    Task SavePreparationAsync(
+        DateOnly dateTournee,
+        string codeTournee,
+        IReadOnlyList<SavePreparationLineDraft> lignes,
+        string status,
+        string? modifiedBy,
+        CancellationToken cancellationToken,
+        bool enregistrerClicPretVerrouillage = false);
 
     Task SaveAdminCommentaireAsync(DateOnly dateTournee, string codeTournee, SaveAdminCommentaireDraft commentaire, string? modifiedBy, CancellationToken cancellationToken);
 

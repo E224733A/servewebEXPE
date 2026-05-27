@@ -160,6 +160,13 @@ public sealed class TourneeLockDto
 
     public string StatutPreparationWeb { get; set; } = "PRETE_VERROUILLAGE";
 
+    /// <summary>
+    /// Heure du dernier clic humain "Marquer prête pour verrouillage" côté SERVWEB.
+    /// Cette date doit être conservée par l'API centrale dans Mobile_ExpeditionPreparation.DateModification.
+    /// Elle est volontairement différente de DateVerrouillageDemandee, qui correspond au verrouillage automatique de nuit.
+    /// </summary>
+    public DateTimeOffset? DateModification { get; set; }
+
     public List<LigneLockDto> Lignes { get; set; } = [];
 }
 
