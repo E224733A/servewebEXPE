@@ -36,6 +36,38 @@ if (!app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 app.UseStaticFiles();
+app.Use(async (context, next) =>
+{
+    var host = context.Request.Host.Host;
+    var path = context.Request.Path;
+
+    if (host.Equals("admin.sli.local", StringComparison.OrdinalIgnoreCase))
+    {
+        if (path == "/" || path == PathString.Empty)
+        {
+            context.Request.Path = "/administration";
+        }
+        else if (path.StartsWithSegments("/expedition"))
+        {
+            context.Response.Redirect("/administration", permanent: false);
+            return;
+        }
+    }
+    else if (host.Equals("expedition.sli.local", StringComparison.OrdinalIgnoreCase))
+    {
+        if (path == "/" || path == PathString.Empty)
+        {
+            context.Request.Path = "/expedition";
+        }
+        else if (path.StartsWithSegments("/administration"))
+        {
+            context.Response.Redirect("/expedition", permanent: false);
+            return;
+        }
+    }
+
+    await next();
+});
 app.UseRouting();
 
 app.Use(async (context, next) =>
