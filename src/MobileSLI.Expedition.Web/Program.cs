@@ -36,6 +36,7 @@ if (!app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 app.UseStaticFiles();
+
 app.Use(async (context, next) =>
 {
     var host = context.Request.Host.Host;
@@ -68,6 +69,7 @@ app.Use(async (context, next) =>
 
     await next();
 });
+
 app.UseRouting();
 
 app.Use(async (context, next) =>
