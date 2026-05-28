@@ -1,13 +1,15 @@
 #requires -RunAsAdministrator
 <#
 MISE A JOUR SERVWEB IIS
-Version corrigee v6 : correction arret AppPool direct dans update + corrections precedentes
+Version corrigee v7 : passage de l'appel API centrale par nom DNS interne SRVAPI1.SLI.local
 A executer apres chaque modification Git / nouvelle version.
 
 Pre-requis :
 - IIS configure avec setup-servweb-iis.ps1
 - ASP.NET Core Hosting Bundle .NET 8 installe
 - Site IIS MobileSLI.Expedition.Web existant
+- DNS interne valide : SRVAPI1.SLI.local -> 192.168.1.233
+- DNS interne valide : expedition.sli.local / admin.sli.local -> SRVINTRAWEB1.SLI.local
 
 Execution conseillee :
 Set-ExecutionPolicy -Scope Process Bypass -Force
@@ -32,8 +34,12 @@ $BackupRoot = "C:\Backups\MobileSLI.Expedition.Web"
 
 $WebPort = 5100
 $ServwebIp = "192.168.1.232"
-$ApiBaseUrl = "http://192.168.1.233:5000/"
-$ApiHealthUrl = "http://192.168.1.233:5000/api/health"
+$ServwebDns = "SRVINTRAWEB1.SLI.local"
+$ExpeditionDns = "expedition.sli.local"
+$AdministrationDns = "admin.sli.local"
+$ApiDns = "SRVAPI1.SLI.local"
+$ApiBaseUrl = "http://${ApiDns}:5000/"
+$ApiHealthUrl = "http://${ApiDns}:5000/api/health"
 $AspNetCoreEnvironment = "Development"
 
 # =========================
@@ -322,7 +328,7 @@ function Test-Deployment {
     Get-WebAppPoolState -Name $AppPoolName | Format-Table -AutoSize
 
     Write-Host ""
-    Write-Host "Test API centrale : $ApiHealthUrl" -ForegroundColor Yellow
+    Write-Host "Test API centrale DNS : $ApiHealthUrl" -ForegroundColor Yellow
     curl.exe -i $ApiHealthUrl
 
     Write-Host ""
@@ -332,6 +338,18 @@ function Test-Deployment {
     Write-Host ""
     Write-Host "Test serveur web IP : http://${ServwebIp}:$WebPort" -ForegroundColor Yellow
     curl.exe -i "http://${ServwebIp}:$WebPort"
+
+    Write-Host ""
+    Write-Host "Test serveur web DNS technique : http://${ServwebDns}:$WebPort/expedition" -ForegroundColor Yellow
+    curl.exe -i "http://${ServwebDns}:$WebPort/expedition"
+
+    Write-Host ""
+    Write-Host "Test interface Expedition DNS : http://${ExpeditionDns}:$WebPort/expedition" -ForegroundColor Yellow
+    curl.exe -i "http://${ExpeditionDns}:$WebPort/expedition"
+
+    Write-Host ""
+    Write-Host "Test interface Administration DNS : http://${AdministrationDns}:$WebPort/administration" -ForegroundColor Yellow
+    curl.exe -i "http://${AdministrationDns}:$WebPort/administration"
 }
 
 # =========================
@@ -341,6 +359,9 @@ function Test-Deployment {
 Write-Step "Mise a jour SERVWEB IIS"
 
 Write-Host "SERVWEB            : $ServwebIp"
+Write-Host "DNS SERVWEB        : $ServwebDns"
+Write-Host "DNS Expedition     : $ExpeditionDns"
+Write-Host "DNS Administration : $AdministrationDns"
 Write-Host "Port web SERVWEB   : $WebPort"
 Write-Host "API centrale       : $ApiBaseUrl"
 Write-Host "Depot Git          : $SourcePath"
@@ -400,6 +421,8 @@ Restart-IisSite
 Test-Deployment
 
 Write-Step "Mise a jour terminee"
-Write-Host "URL locale  : http://localhost:$WebPort" -ForegroundColor Green
-Write-Host "URL reseau  : http://${ServwebIp}:$WebPort" -ForegroundColor Green
-Write-Host "API centrale: $ApiBaseUrl" -ForegroundColor Green
+Write-Host "URL locale          : http://localhost:$WebPort" -ForegroundColor Green
+Write-Host "URL reseau IP       : http://${ServwebIp}:$WebPort" -ForegroundColor Green
+Write-Host "URL Expedition DNS  : http://${ExpeditionDns}:$WebPort/expedition" -ForegroundColor Green
+Write-Host "URL Admin DNS       : http://${AdministrationDns}:$WebPort/administration" -ForegroundColor Green
+Write-Host "API centrale DNS    : $ApiBaseUrl" -ForegroundColor Green
