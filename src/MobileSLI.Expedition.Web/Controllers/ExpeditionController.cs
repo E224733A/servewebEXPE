@@ -37,6 +37,13 @@ public sealed class ExpeditionController : Controller
     [HttpGet("/")]
     public IActionResult Root()
     {
+        var host = Request.Host.Host;
+
+        if (host.Equals("admin.sli.local", StringComparison.OrdinalIgnoreCase))
+        {
+            return Redirect("/administration");
+        }
+
         return Redirect("/expedition");
     }
 
