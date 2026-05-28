@@ -14,6 +14,6 @@ public sealed class AccessControlOptions
 
     // Filtrage applicatif léger uniquement.
     // Le vrai filtrage réseau doit être fait au pare-feu Windows / IIS.
-    // Exemple : ["192.168.1.", "10.0.0.", "127.0.0.1", "::1"]
+    // Laisser vide si le filtrage IP n'est pas utilisé.
     public List<string> AllowedIpPrefixes { get; set; } = [];
 }
