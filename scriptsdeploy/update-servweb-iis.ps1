@@ -349,41 +349,39 @@ function Restart-IisSite {
 function Invoke-HttpTest {
     param(
         [string]$Url,
-        [int[]]$ExpectedStatusCodes
+        [int[]]$ExpectedStatusCodes,
+        [string]$ExpectedLocation = ""
     )
 
     Write-Host ""
     Write-Host "Test HTTP : $Url" -ForegroundColor Yellow
 
-    try {
-        $response = Invoke-WebRequest -Uri $Url -UseBasicParsing -MaximumRedirection 0 -TimeoutSec 20 -ErrorAction Stop
-        $code = [int]$response.StatusCode
-        $location = $response.Headers["Location"]
+    $curlResult = & curl.exe -i -s -o NUL -w "%{http_code}|%{redirect_url}" $Url
+    $parts = $curlResult.Split("|")
+    $code = [int]$parts[0]
+    $redirectUrl = if ($parts.Count -gt 1) { $parts[1] } else { "" }
 
-        if ($ExpectedStatusCodes -contains $code) {
-            Write-Host "[OK] Code=$code Location=$location" -ForegroundColor Green
+    $location = ""
+    if (-not [string]::IsNullOrWhiteSpace($redirectUrl)) {
+        try {
+            $uri = [Uri]$redirectUrl
+            $location = $uri.PathAndQuery
         }
-        else {
-            throw "Code HTTP inattendu : $code. Attendu : $($ExpectedStatusCodes -join ', ')"
+        catch {
+            $location = $redirectUrl
         }
     }
-    catch {
-        if ($_.Exception.Response) {
-            $code = [int]$_.Exception.Response.StatusCode
-            $location = $_.Exception.Response.Headers["Location"]
 
-            if ($ExpectedStatusCodes -contains $code) {
-                Write-Host "[OK] Code=$code Location=$location" -ForegroundColor Green
-                return
-            }
+    $statusOk = $ExpectedStatusCodes -contains $code
+    $locationOk = [string]::IsNullOrWhiteSpace($ExpectedLocation) -or $location -eq $ExpectedLocation
 
-            throw "Code HTTP inattendu : $code. Location=$location. Attendu : $($ExpectedStatusCodes -join ', ')"
-        }
-
-        throw
+    if ($statusOk -and $locationOk) {
+        Write-Host "[OK] Code=$code Location=$location" -ForegroundColor Green
+        return
     }
+
+    throw "Test HTTP échoué : $Url Code=$code Location=$location Attendu=$($ExpectedStatusCodes -join ',') $ExpectedLocation"
 }
-
 function Test-Deployment {
     Write-Step "Tests de verification"
 
