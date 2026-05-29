@@ -37,6 +37,11 @@ if (!app.Environment.IsDevelopment())
 app.UseHttpsRedirection();
 app.UseStaticFiles();
 
+// Routage par nom DNS public de l'interface.
+// Objectif : permettre aux utilisateurs d'utiliser uniquement :
+// - http://expedition.sli.local
+// - http://admin.sli.local
+// Le port 5100 reste disponible pour le diagnostic technique, mais ne doit plus être l'URL communiquée aux utilisateurs.
 app.Use(async (context, next) =>
 {
     var host = context.Request.Host.Host;
