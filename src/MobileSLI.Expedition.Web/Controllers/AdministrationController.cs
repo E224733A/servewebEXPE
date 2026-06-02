@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using MobileSLI.Expedition.Web.Application.Administration;
 using MobileSLI.Expedition.Web.Data;
 using MobileSLI.Expedition.Web.Models;
 using MobileSLI.Expedition.Web.Services;
@@ -157,16 +158,10 @@ public sealed class AdministrationController : Controller
             return RedirectToAction(nameof(Commentaires), new { codeTournee });
         }
 
-        if (string.IsNullOrWhiteSpace(input.IdLigneSource)
-            || !tournee.Lignes.Any(l => string.Equals(l.IdLigneSource, input.IdLigneSource, StringComparison.OrdinalIgnoreCase)))
+        var validation = AdministrationCommentaireValidator.Validate(input, tournee);
+        if (!validation.IsValid)
         {
-            TempData["Error"] = "La ligne demandée n'existe pas dans la tournée chargée.";
-            return RedirectToAction(nameof(Commentaires), new { codeTournee });
-        }
-
-        if (!ModelState.IsValid)
-        {
-            TempData["Error"] = "Le commentaire exceptionnel ne doit pas dépasser 400 caractères.";
+            TempData["Error"] = validation.Message;
             return RedirectToAction(nameof(Commentaires), new { codeTournee });
         }
 
