@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
+using MobileSLI.Expedition.Web.Application.Expedition;
 using MobileSLI.Expedition.Web.Data;
 using MobileSLI.Expedition.Web.Models;
 using MobileSLI.Expedition.Web.Options;
@@ -396,34 +397,6 @@ public sealed class ExpeditionController : Controller
         }
     }
 
-    private static List<string> ValidatePreparationInput(PreparationInputModel input, TourneePreparationDto tournee, List<ArticleSuiviDto> articles)
-    {
-        var errors = new List<string>();
-        var knownLines = tournee.Lignes.Select(l => l.IdLigneSource).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var knownArticles = articles.Select(a => a.CodeArticle).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        foreach (var line in input.Lignes)
-        {
-            if (string.IsNullOrWhiteSpace(line.IdLigneSource) || !knownLines.Contains(line.IdLigneSource))
-            {
-                errors.Add("Une ligne envoyée par le formulaire ne correspond à aucune ligne chargée.");
-                continue;
-            }
-            foreach (var quantity in line.Quantites)
-            {
-                if (string.IsNullOrWhiteSpace(quantity.CodeArticle) || !knownArticles.Contains(quantity.CodeArticle))
-                {
-                    errors.Add($"Article inconnu pour la ligne {line.IdLigneSource}.");
-                    continue;
-                }
-                if (quantity.QuantiteLivreePrevue < 0)
-                {
-                    errors.Add($"Quantité négative interdite pour la ligne {line.IdLigneSource}, article {quantity.CodeArticle}.");
-                }
-            }
-        }
-        return errors.Distinct().ToList();
-    }
-
     private static string BuildAddress(PointLivraisonDto point)
     {
         var parts = new[] { point.AdresseLigne1, point.AdresseLigne2, point.AdresseLigne3, string.Join(' ', new[] { point.CodePostal, point.Ville }.Where(v => !string.IsNullOrWhiteSpace(v))) };
@@ -446,7 +419,7 @@ public sealed class ExpeditionController : Controller
         }
 
         var articles = BuildArticlesPrepares(load.ArticlesSuivis);
-        var errors = ValidatePreparationInput(input, tournee, articles);
+        var errors = ExpeditionPreparationValidator.Validate(input, tournee, articles);
         if (errors.Count > 0)
         {
             return SavePreparationResult.Fail(string.Join(" ", errors));
