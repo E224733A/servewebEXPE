@@ -3,6 +3,11 @@ using MobileSLI.Expedition.Web.Data;
 using MobileSLI.Expedition.Web.Models;
 using MobileSLI.Expedition.Web.Services;
 using MobileSLI.Expedition.Web.ViewModels;
+// Import des constantes métier pour éviter les chaînes magiques et clarifier l'origine des statuts.
+// Les constantes se trouvent dans le namespace Domain.Constants de la partie Web.
+using DomainArticleCodes = MobileSLI.Expedition.Web.Domain.Constants.ArticleCodes;
+using DomainDraftStatuses = MobileSLI.Expedition.Web.Domain.Constants.DraftStatuses;
+using DomainLotStatuses = MobileSLI.Expedition.Web.Domain.Constants.LotStatuses;
 
 namespace MobileSLI.Expedition.Web.Controllers;
 
@@ -45,7 +50,8 @@ public sealed class AdministrationController : Controller
         try
         {
             var response = await _apiClient.GetPreparationsAsync(cancellationToken);
-            if (!string.Equals(response.Statut, "SUCCESS", StringComparison.OrdinalIgnoreCase))
+            // Utilise une constante pour vérifier le statut de succès retourné par l'API afin d'éviter les chaînes magiques.
+            if (!string.Equals(response.Statut, DomainLotStatuses.Success, StringComparison.OrdinalIgnoreCase))
             {
                 TempData["Error"] = $"Le chargement a été refusé par l'API : {response.Statut}.";
                 return RedirectToAction(nameof(Index));
@@ -108,7 +114,7 @@ public sealed class AdministrationController : Controller
                     {
                         CodeTournee = t.CodeTournee,
                         LibelleTournee = t.LibelleTournee,
-                        EtatPreparation = isLocked ? DraftStatuses.Verrouille : state?.Status ?? t.EtatPreparation,
+                        EtatPreparation = isLocked ? DomainDraftStatuses.Verrouille : state?.Status ?? t.EtatPreparation,
                         IsLocked = isLocked,
                         NombreLignes = t.Lignes.Count
                     };
@@ -210,7 +216,7 @@ public sealed class AdministrationController : Controller
             DateTournee = load.DateTournee,
             CodeTournee = tournee.CodeTournee,
             LibelleTournee = tournee.LibelleTournee,
-            EtatPreparation = isReadOnly ? DraftStatuses.Verrouille : tourneeState?.Status ?? tournee.EtatPreparation,
+            EtatPreparation = isReadOnly ? DomainDraftStatuses.Verrouille : tourneeState?.Status ?? tournee.EtatPreparation,
             IsReadOnly = isReadOnly,
             IsAdministrationMode = true,
             Articles = BuildArticlesPrepares(load.ArticlesSuivis),
@@ -251,11 +257,12 @@ public sealed class AdministrationController : Controller
 
     private static List<ArticleSuiviDto> BuildArticlesPrepares(List<ArticleSuiviDto> articles)
     {
+        // Centralisation des codes articles pour éviter la répétition de chaînes magiques.
         var defaults = new[]
         {
-            new ArticleSuiviDto { CodeArticle = "ROLLS", LibelleArticle = "Rolls pleins", TypeQuantite = "LIVREE_PREVUE" },
-            new ArticleSuiviDto { CodeArticle = "TAPIS", LibelleArticle = "Tapis", TypeQuantite = "LIVREE_PREVUE" },
-            new ArticleSuiviDto { CodeArticle = "SACS", LibelleArticle = "Sacs", TypeQuantite = "LIVREE_PREVUE" }
+            new ArticleSuiviDto { CodeArticle = DomainArticleCodes.Rolls, LibelleArticle = "Rolls pleins", TypeQuantite = "LIVREE_PREVUE" },
+            new ArticleSuiviDto { CodeArticle = DomainArticleCodes.Tapis, LibelleArticle = "Tapis", TypeQuantite = "LIVREE_PREVUE" },
+            new ArticleSuiviDto { CodeArticle = DomainArticleCodes.Sacs, LibelleArticle = "Sacs", TypeQuantite = "LIVREE_PREVUE" }
         };
 
         return defaults.Select(defaultArticle =>

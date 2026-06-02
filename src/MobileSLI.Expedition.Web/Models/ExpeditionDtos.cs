@@ -1,10 +1,13 @@
 using System.Text.Json.Serialization;
+using DomainDraftStatuses = MobileSLI.Expedition.Web.Domain.Constants.DraftStatuses;
+using DomainFuseauxHoraires = MobileSLI.Expedition.Web.Domain.Constants.FuseauxHoraires;
+using DomainLotStatuses = MobileSLI.Expedition.Web.Domain.Constants.LotStatuses;
 
 namespace MobileSLI.Expedition.Web.Models;
 
 public sealed class ExpeditionLoadResponse
 {
-    public string Statut { get; set; } = "SUCCESS";
+    public string Statut { get; set; } = DomainLotStatuses.Success;
 
     public string SchemaVersion { get; set; } = "1.2";
 
@@ -14,7 +17,7 @@ public sealed class ExpeditionLoadResponse
 
     public bool DateModifiable { get; set; }
 
-    public string FuseauHoraireMetier { get; set; } = "Europe/Paris";
+    public string FuseauHoraireMetier { get; set; } = DomainFuseauxHoraires.EuropeParis;
 
     public DateTimeOffset DateGenerationApi { get; set; }
 
@@ -147,7 +150,7 @@ public sealed class ExpeditionLockRequest
 
     public DateTimeOffset DateVerrouillageDemandee { get; set; }
 
-    public string FuseauHoraireMetier { get; set; } = "Europe/Paris";
+    public string FuseauHoraireMetier { get; set; } = DomainFuseauxHoraires.EuropeParis;
 
     public List<TourneeLockDto> Tournees { get; set; } = [];
 }
@@ -158,7 +161,7 @@ public sealed class TourneeLockDto
 
     public string LibelleTournee { get; set; } = string.Empty;
 
-    public string StatutPreparationWeb { get; set; } = "PRETE_VERROUILLAGE";
+    public string StatutPreparationWeb { get; set; } = DomainDraftStatuses.PreteVerrouillage;
 
     /// <summary>
     /// Heure du dernier clic humain "Marquer prête pour verrouillage" côté SERVWEB.
@@ -207,7 +210,7 @@ public sealed class DerniereModificationDto
 
 public sealed class ExpeditionLockResponse
 {
-    public string Statut { get; set; } = "SUCCESS";
+    public string Statut { get; set; } = DomainLotStatuses.Success;
 
     public string? Code { get; set; }
 

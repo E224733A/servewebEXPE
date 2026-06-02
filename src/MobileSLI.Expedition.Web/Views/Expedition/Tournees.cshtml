@@ -1,18 +1,13 @@
 @model TourneesIndexViewModel
+@using MobileSLI.Expedition.Web.Domain.Rules
+@using MobileSLI.Expedition.Web.Domain.Constants
+
 @{
     ViewData["Title"] = "Tournées préparables";
 
-    static bool IsReadyForLockStatus(string? status)
-    {
-        var normalized = status?.Trim().ToUpperInvariant();
-        return normalized is "PRET_VERROUILLAGE" or "PRETE_VERROUILLAGE";
-    }
-
-    static bool IsInPreparationStatus(string? status)
-    {
-        var normalized = status?.Trim().ToUpperInvariant();
-        return normalized is "EN_PREPARATION_WEB" or "BROUILLON";
-    }
+    // Delegate to centralised rules instead of hard‑coded string comparisons.
+    static bool IsReadyForLockStatus(string? status) => ExpeditionRules.IsReadyForLockStatus(status);
+    static bool IsInPreparationStatus(string? status) => ExpeditionRules.IsInPreparationStatus(status);
 
     var lockedCount = Model.Tournees.Count(t => t.IsLocked);
     var readyCount = Model.Tournees.Count(t => !t.IsLocked && IsReadyForLockStatus(t.EtatPreparation));

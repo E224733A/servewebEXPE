@@ -6,6 +6,12 @@ using MobileSLI.Expedition.Web.Models;
 using MobileSLI.Expedition.Web.Options;
 using MobileSLI.Expedition.Web.Services;
 using MobileSLI.Expedition.Web.ViewModels;
+// Import des constantes et règles métier afin d’éviter les chaînes magiques.
+// Les constantes se trouvent dans le namespace Domain.Constants de la partie Web et les règles dans Domain.Rules.
+using DomainArticleCodes = MobileSLI.Expedition.Web.Domain.Constants.ArticleCodes;
+using DomainDraftStatuses = MobileSLI.Expedition.Web.Domain.Constants.DraftStatuses;
+using DomainLotStatuses = MobileSLI.Expedition.Web.Domain.Constants.LotStatuses;
+using MobileSLI.Expedition.Web.Domain.Rules;
 
 namespace MobileSLI.Expedition.Web.Controllers;
 
@@ -69,7 +75,8 @@ public sealed class ExpeditionController : Controller
         try
         {
             var response = await _apiClient.GetPreparationsAsync(cancellationToken);
-            if (!string.Equals(response.Statut, "SUCCESS", StringComparison.OrdinalIgnoreCase))
+            // Utilise une constante centralisée pour vérifier le statut de succès retourné par l’API.
+            if (!string.Equals(response.Statut, DomainLotStatuses.Success, StringComparison.OrdinalIgnoreCase))
             {
                 TempData["Error"] = $"Le chargement a été refusé par l'API : {response.Statut}.";
                 return RedirectToAction(nameof(Index));
@@ -130,7 +137,8 @@ public sealed class ExpeditionController : Controller
                 {
                     CodeTournee = t.CodeTournee,
                     LibelleTournee = t.LibelleTournee,
-                    EtatPreparation = isLocked ? DraftStatuses.Verrouille : state?.Status ?? t.EtatPreparation,
+                    // Utilise la constante pour l'état Verrouillé.
+                    EtatPreparation = isLocked ? DomainDraftStatuses.Verrouille : state?.Status ?? t.EtatPreparation,
                     IsLocked = isLocked,
                     NombreLignes = t.Lignes.Count
                 };
@@ -155,7 +163,8 @@ public sealed class ExpeditionController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Preparer(string codeTournee, PreparationInputModel input, CancellationToken cancellationToken)
     {
-        var result = await SavePreparationDraftAsync(codeTournee, input, DraftStatuses.Brouillon, cancellationToken);
+        // Lors de l'enregistrement, on passe explicitement le statut de brouillon à l'aide de la constante centralisée.
+        var result = await SavePreparationDraftAsync(codeTournee, input, DomainDraftStatuses.Brouillon, cancellationToken);
         if (!result.Success)
         {
             var invalidModel = await BuildPreparationViewModelAsync(codeTournee, cancellationToken);
@@ -207,7 +216,7 @@ public sealed class ExpeditionController : Controller
         var result = await SavePreparationDraftAsync(
             codeTournee,
             new PreparationInputModel { Lignes = [input] },
-            DraftStatuses.Brouillon,
+            DomainDraftStatuses.Brouillon,
             cancellationToken);
 
         TempData[result.Success ? "Success" : "Error"] = result.Success
@@ -261,7 +270,7 @@ public sealed class ExpeditionController : Controller
             }).ToList()
         };
 
-        var result = await SavePreparationDraftAsync(codeTournee, input, DraftStatuses.PretVerrouillage, cancellationToken);
+        var result = await SavePreparationDraftAsync(codeTournee, input, DomainDraftStatuses.PretVerrouillage, cancellationToken);
         TempData[result.Success ? "Success" : "Error"] = result.Success
             ? "Tournée marquée prête pour le verrouillage automatique de 22h35."
             : result.Message;
@@ -317,7 +326,8 @@ public sealed class ExpeditionController : Controller
             DateTournee = load.DateTournee,
             CodeTournee = tournee.CodeTournee,
             LibelleTournee = tournee.LibelleTournee,
-            EtatPreparation = isReadOnly ? DraftStatuses.Verrouille : tourneeState?.Status ?? tournee.EtatPreparation,
+            // Utilise la constante Verrouille de Domain pour marquer l’état si verrouillé.
+            EtatPreparation = isReadOnly ? DomainDraftStatuses.Verrouille : tourneeState?.Status ?? tournee.EtatPreparation,
             IsReadOnly = isReadOnly,
             IsAdministrationMode = false,
             Articles = articlesPrepares,
@@ -358,12 +368,13 @@ public sealed class ExpeditionController : Controller
 
     private static List<ArticleSuiviDto> BuildArticlesPrepares(List<ArticleSuiviDto> articles)
     {
+        // Articles suivis par défaut : utilise des constantes pour éviter les chaînes magiques.
         var defaults = new[]
         {
-            new ArticleSuiviDto { CodeArticle = "ROLLS", LibelleArticle = "Chariots", TypeQuantite = "LIVREE_PREVUE" },
-            new ArticleSuiviDto { CodeArticle = "ROLLS_VIDES", LibelleArticle = "Chariots vides", TypeQuantite = "LIVREE_PREVUE" },
-            new ArticleSuiviDto { CodeArticle = "TAPIS", LibelleArticle = "Tapis", TypeQuantite = "LIVREE_PREVUE" },
-            new ArticleSuiviDto { CodeArticle = "SACS", LibelleArticle = "Sacs", TypeQuantite = "LIVREE_PREVUE" }
+            new ArticleSuiviDto { CodeArticle = DomainArticleCodes.Rolls, LibelleArticle = "Chariots", TypeQuantite = "LIVREE_PREVUE" },
+            new ArticleSuiviDto { CodeArticle = DomainArticleCodes.RollsVides, LibelleArticle = "Chariots vides", TypeQuantite = "LIVREE_PREVUE" },
+            new ArticleSuiviDto { CodeArticle = DomainArticleCodes.Tapis, LibelleArticle = "Tapis", TypeQuantite = "LIVREE_PREVUE" },
+            new ArticleSuiviDto { CodeArticle = DomainArticleCodes.Sacs, LibelleArticle = "Sacs", TypeQuantite = "LIVREE_PREVUE" }
         };
         return defaults.Select(defaultArticle => articles.FirstOrDefault(a => string.Equals(a.CodeArticle, defaultArticle.CodeArticle, StringComparison.OrdinalIgnoreCase)) ?? defaultArticle).ToList();
     }
@@ -451,9 +462,9 @@ public sealed class ExpeditionController : Controller
         }).ToList();
 
         var effectiveStatus = ResolveStatusAfterExpeditionUpdate(status, state?.Status);
-        var statusConservePretVerrouillage = IsReadyForLockStatus(state?.Status)
-            && string.Equals(status, DraftStatuses.Brouillon, StringComparison.OrdinalIgnoreCase);
-        var enregistrerClicPretVerrouillage = string.Equals(status, DraftStatuses.PretVerrouillage, StringComparison.OrdinalIgnoreCase);
+        var statusConservePretVerrouillage = ExpeditionRules.IsReadyForLockStatus(state?.Status)
+            && string.Equals(status, DomainDraftStatuses.Brouillon, StringComparison.OrdinalIgnoreCase);
+        var enregistrerClicPretVerrouillage = string.Equals(status, DomainDraftStatuses.PretVerrouillage, StringComparison.OrdinalIgnoreCase);
 
         try
         {
@@ -476,12 +487,13 @@ public sealed class ExpeditionController : Controller
 
     private static string ResolveStatusAfterExpeditionUpdate(string requestedStatus, string? currentStatus)
     {
-        if (string.Equals(requestedStatus, DraftStatuses.Brouillon, StringComparison.OrdinalIgnoreCase)
-            && IsReadyForLockStatus(currentStatus))
+        // Si on passe en brouillon alors que la tournée est déjà prête, conserver l'état prêt.
+        if (string.Equals(requestedStatus, DomainDraftStatuses.Brouillon, StringComparison.OrdinalIgnoreCase)
+            && ExpeditionRules.IsReadyForLockStatus(currentStatus))
         {
             // Règle métier : une tournée prête pour verrouillage reste prête.
             // Une correction de quantité ne doit jamais la refaire passer en brouillon.
-            return string.IsNullOrWhiteSpace(currentStatus) ? DraftStatuses.PretVerrouillage : currentStatus;
+            return string.IsNullOrWhiteSpace(currentStatus) ? DomainDraftStatuses.PretVerrouillage : currentStatus!;
         }
 
         return requestedStatus;
@@ -489,8 +501,8 @@ public sealed class ExpeditionController : Controller
 
     private static bool IsReadyForLockStatus(string? status)
     {
-        var normalized = status?.Trim().ToUpperInvariant();
-        return normalized is "PRET_VERROUILLAGE" or "PRETE_VERROUILLAGE";
+        // Délègue la logique de détection des statuts prêts pour verrouillage à la règle centralisée.
+        return ExpeditionRules.IsReadyForLockStatus(status);
     }
 
     private sealed record SavePreparationResult(bool Success, string? Message, bool StatusConservePretVerrouillage)

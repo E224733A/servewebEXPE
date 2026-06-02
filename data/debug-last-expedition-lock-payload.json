@@ -6,29 +6,34 @@
                                         {
                                             "derniereModification":  {
                                                                          "utilisateur":  "APPLICATION_WEB_EXPEDITION",
-                                                                         "date":  "2026-05-22T11:01:10.9814707+02:00"
+                                                                         "date":  "2026-06-02T14:25:34.5516907+02:00"
                                                                      },
                                             "commentaireExceptionnel":  null,
-                                            "idLigneSource":  "2026-05-25|1001|1|1108|1664|0",
+                                            "idLigneSource":  "2026-06-03|3001|3|1071|2465|0",
                                             "pointLivraison":  {
-                                                                   "ville":  "LA VERRIE",
-                                                                   "adresseLigne1":  "1 RUE LOUIS PASTEUR",
-                                                                   "adresseLigne3":  null,
-                                                                   "codePDL":  "1664",
-                                                                   "codePostal":  "85130",
-                                                                   "descriptionPDL":  "HOTEL LA VERRIAIRE - LA VERRIE",
+                                                                   "ville":  "MOUTIERS LES MAUXFAITS",
+                                                                   "adresseLigne1":  "7 RUE DE L ERMITAGE",
+                                                                   "adresseLigne3":  "SIRET 26850102000021",
+                                                                   "codePDL":  "2465",
+                                                                   "codePostal":  "85540",
+                                                                   "descriptionPDL":  "RES ERMITAGE-M.MAUXFAIT",
                                                                    "adresseLigne2":  null
                                                                },
                                             "client":  {
-                                                           "numClient":  "1108",
-                                                           "nomAffiche":  "HOTEL LA VERRIAIRE - LA VERRIE",
-                                                           "nomClient":  "HOTEL LA VERRIAIRE SAS"
+                                                           "numClient":  "1071",
+                                                           "nomAffiche":  "RES ERMITAGE-M.MAUXFAIT",
+                                                           "nomClient":  "RES.L ERMITAGE-MOUTIERS.MAUXFAITS"
                                                        },
                                             "quantitesPrevues":  [
                                                                      {
                                                                          "quantiteLivreePrevue":  4,
                                                                          "libelle":  "Rolls",
                                                                          "codeArticle":  "ROLLS"
+                                                                     },
+                                                                     {
+                                                                         "quantiteLivreePrevue":  null,
+                                                                         "libelle":  "Rolls vides",
+                                                                         "codeArticle":  "ROLLS_VIDES"
                                                                      },
                                                                      {
                                                                          "quantiteLivreePrevue":  null,
@@ -44,14 +49,14 @@
                                             "ordreArret":  0
                                         }
                                     ],
-                         "codeTournee":  "1001",
-                         "libelleTournee":  "CHATAIGNERAIE LES HERBIERS"
+                         "codeTournee":  "3001",
+                         "libelleTournee":  "MDR VENDEE"
                      }
                  ],
     "source":  "APPLICATION_WEB_EXPEDITION",
-    "dateTournee":  "2026-05-25",
-    "idLotVerrouillage":  "SERVEXPE-2026-05-22-1101-001",
+    "dateTournee":  "2026-06-03",
+    "idLotVerrouillage":  "SERVEXPE-2026-06-02-1425-001",
     "fuseauHoraireMetier":  "Europe/Paris",
     "schemaVersion":  "1.2",
-    "dateVerrouillageDemandee":  "2026-05-22T11:01:10.9814707+02:00"
+    "dateVerrouillageDemandee":  "2026-06-02T14:25:34.5516907+02:00"
 }

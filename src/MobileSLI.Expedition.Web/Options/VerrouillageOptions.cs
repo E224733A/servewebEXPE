@@ -1,3 +1,5 @@
+using MobileSLI.Expedition.Web.Domain.Constants;
+
 namespace MobileSLI.Expedition.Web.Options;
 
 public sealed class VerrouillageOptions
@@ -6,7 +8,7 @@ public sealed class VerrouillageOptions
 
     public bool Enabled { get; set; } = true;
 
-    public string TimeZoneId { get; set; } = "Europe/Paris";
+    public string TimeZoneId { get; set; } = FuseauxHoraires.EuropeParis;
 
     public int Hour { get; set; } = 22;
 

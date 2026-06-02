@@ -1,13 +1,12 @@
 @model PreparationTourneeViewModel
+@using MobileSLI.Expedition.Web.Domain.Rules
+
 @{
     ViewData["Title"] = "Expédition - Détail ligne";
     var selectedLineId = ViewData["SelectedLineId"] as string;
     var ligne = Model.Lignes.First(l => string.Equals(l.IdLigneSource, selectedLineId, StringComparison.OrdinalIgnoreCase));
-    static bool IsReadyForLockStatus(string? status)
-    {
-        var normalized = status?.Trim().ToUpperInvariant();
-        return normalized is "PRET_VERROUILLAGE" or "PRETE_VERROUILLAGE";
-    }
+    // Delegate to centralised rule instead of repeating literal status values.
+    static bool IsReadyForLockStatus(string? status) => ExpeditionRules.IsReadyForLockStatus(status);
 
     var isReadyForLock = IsReadyForLockStatus(Model.EtatPreparation);
 }
