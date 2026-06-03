@@ -4,8 +4,11 @@ Set-StrictMode -Version Latest
 # ============================================================
 # Mise a jour SERVWEB IIS depuis artefact Git
 # ============================================================
-# Ce script NE COMPILE PAS.
-# Il recupere le ZIP publie dans Git, le dezippe et le deploie sur IIS.
+# IMPORTANT :
+# - Ce script NE FAIT PAS de dotnet build.
+# - Ce script NE FAIT PAS de dotnet publish.
+# - L'artefact doit etre publie en local puis pousse dans Git :
+#   artifacts\servweb\MobileSLI.Expedition.Web.zip
 # ============================================================
 
 $SiteName = "MobileSLI.Expedition.Web"
@@ -33,7 +36,7 @@ $AspNetEnvironment = "Development"
 $FirewallRuleName = "ServeWebEXPE HTTP 80"
 
 function Write-Step {
-    param([string]$Message)
+    param([Parameter(Mandatory = $true)][string]$Message)
 
     Write-Host ""
     Write-Host "============================================================"
@@ -43,8 +46,8 @@ function Write-Step {
 
 function Assert-PathExists {
     param(
-        [string]$Path,
-        [string]$Message
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string]$Message
     )
 
     if (-not (Test-Path $Path)) {
@@ -53,7 +56,7 @@ function Assert-PathExists {
 }
 
 function Ensure-Directory {
-    param([string]$Path)
+    param([Parameter(Mandatory = $true)][string]$Path)
 
     if (-not (Test-Path $Path)) {
         New-Item -ItemType Directory -Force -Path $Path | Out-Null
@@ -62,14 +65,13 @@ function Ensure-Directory {
 
 function Invoke-RobocopyChecked {
     param(
-        [string]$Source,
-        [string]$Destination,
-        [string[]]$Arguments,
-        [string]$ErrorMessage
+        [Parameter(Mandatory = $true)][string]$Source,
+        [Parameter(Mandatory = $true)][string]$Destination,
+        [Parameter(Mandatory = $true)][string[]]$Arguments,
+        [Parameter(Mandatory = $true)][string]$ErrorMessage
     )
 
     robocopy $Source $Destination @Arguments
-
     $exitCode = $LASTEXITCODE
 
     if ($exitCode -gt 7) {
@@ -81,26 +83,22 @@ function Sync-GitRepository {
     Write-Step "Mise a jour Git"
 
     Assert-PathExists $SourcePath "Dossier source introuvable"
-
     Set-Location $SourcePath
 
     git status
 
     Write-Host "SERVWEB est un serveur de deploiement : les modifications locales sont supprimees."
     git fetch origin
-
     if ($LASTEXITCODE -ne 0) {
         throw "git fetch origin a echoue."
     }
 
     git reset --hard origin/main
-
     if ($LASTEXITCODE -ne 0) {
         throw "git reset --hard origin/main a echoue."
     }
 
     git clean -fd
-
     if ($LASTEXITCODE -ne 0) {
         throw "git clean -fd a echoue."
     }
@@ -127,10 +125,7 @@ function Expand-Artifact {
     Remove-Item -Recurse -Force $PublishPath -ErrorAction SilentlyContinue
     New-Item -ItemType Directory -Force -Path $PublishPath | Out-Null
 
-    Expand-Archive `
-        -Path $artifactPath `
-        -DestinationPath $PublishPath `
-        -Force
+    Expand-Archive -Path $artifactPath -DestinationPath $PublishPath -Force
 
     Assert-PathExists (Join-Path $PublishPath "MobileSLI.Expedition.Web.dll") "DLL publiee introuvable apres extraction"
     Assert-PathExists (Join-Path $PublishPath "web.config") "web.config publie introuvable apres extraction"
@@ -140,48 +135,6 @@ function Expand-Artifact {
     Write-Host "Artefact extrait vers : $PublishPath"
     Write-Host "DLL LastWriteTime     : $($dll.LastWriteTime)"
     Write-Host "DLL Taille Mo         : $([math]::Round($dll.Length / 1MB, 2))"
-}
-
-function Stop-IisApplication {
-    Write-Step "Arret IIS avant copie"
-
-    Import-Module WebAdministration
-
-    Stop-Website $SiteName -ErrorAction SilentlyContinue
-    Stop-WebAppPool $AppPoolName -ErrorAction SilentlyContinue
-
-    Start-Sleep -Seconds 3
-
-    Get-CimInstance Win32_Process -Filter "name = 'w3wp.exe'" -ErrorAction SilentlyContinue |
-        Where-Object { $_.CommandLine -like "*$AppPoolName*" } |
-        ForEach-Object {
-            Write-Host "Worker IIS encore actif, arret force PID=$($_.ProcessId)"
-            Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
-        }
-}
-
-function Start-IisApplication {
-    Write-Step "Redemarrage IIS"
-
-    Import-Module WebAdministration
-
-    $appPool = Get-Item "IIS:\AppPools\$AppPoolName" -ErrorAction SilentlyContinue
-    if ($null -eq $appPool) {
-        throw "AppPool introuvable : $AppPoolName"
-    }
-
-    $site = Get-Website -Name $SiteName -ErrorAction SilentlyContinue
-    if ($null -eq $site) {
-        throw "Site IIS introuvable : $SiteName"
-    }
-
-    if ($appPool.State -ne "Started") {
-        Start-WebAppPool $AppPoolName
-    }
-
-    if ($site.State -ne "Started") {
-        Start-Website $SiteName
-    }
 }
 
 function Backup-CurrentDeployment {
@@ -204,6 +157,39 @@ function Backup-CurrentDeployment {
     Write-Host "Backup cree : $backupPath"
 }
 
+function Enable-AppOffline {
+    Write-Step "Mise hors ligne temporaire ASP.NET Core"
+
+    Ensure-Directory $DeployPath
+
+    $appOfflinePath = Join-Path $DeployPath "app_offline.htm"
+
+    @"
+<html>
+<head>
+    <meta charset="utf-8" />
+    <title>Maintenance</title>
+</head>
+<body>
+    Application en cours de mise a jour.
+</body>
+</html>
+"@ | Set-Content -Path $appOfflinePath -Encoding UTF8
+
+    Start-Sleep -Seconds 5
+
+    Write-Host "app_offline.htm cree : $appOfflinePath"
+}
+
+function Disable-AppOffline {
+    $appOfflinePath = Join-Path $DeployPath "app_offline.htm"
+
+    if (Test-Path $appOfflinePath) {
+        Remove-Item -Path $appOfflinePath -Force -ErrorAction SilentlyContinue
+        Write-Host "app_offline.htm supprime."
+    }
+}
+
 function Deploy-PublishedFiles {
     Write-Step "Copie artefact vers IIS"
 
@@ -213,7 +199,7 @@ function Deploy-PublishedFiles {
     Invoke-RobocopyChecked `
         -Source $PublishPath `
         -Destination $DeployPath `
-        -Arguments @("/MIR", "/R:3", "/W:5", "/XD", "data", "logs", "scripts", "/XF", "*.log") `
+        -Arguments @("/MIR", "/R:3", "/W:5", "/XD", "data", "logs", "scripts", "/XF", "*.log", "app_offline.htm") `
         -ErrorMessage "Deploiement robocopy echoue."
 }
 
@@ -237,10 +223,10 @@ function Ensure-ScheduledLockScript {
 
 function Set-WebConfigEnvironmentVariable {
     param(
-        [xml]$WebConfig,
-        [System.Xml.XmlElement]$AspNetCoreNode,
-        [string]$Name,
-        [string]$Value
+        [Parameter(Mandatory = $true)][xml]$WebConfig,
+        [Parameter(Mandatory = $true)][System.Xml.XmlElement]$AspNetCoreNode,
+        [Parameter(Mandatory = $true)][string]$Name,
+        [Parameter(Mandatory = $true)][string]$Value
     )
 
     $environmentVariablesNode = $AspNetCoreNode.environmentVariables
@@ -273,7 +259,7 @@ function Set-WebConfigEnvironmentVariable {
 }
 
 function Ensure-WebConfigEnvironment {
-    param([string]$WebConfigPath)
+    param([Parameter(Mandatory = $true)][string]$WebConfigPath)
 
     Write-Step "Configuration web.config"
 
@@ -283,7 +269,12 @@ function Ensure-WebConfigEnvironment {
 
     [xml]$webConfig = Get-Content $WebConfigPath -Raw
 
-    $aspNetCoreNode = $webConfig.configuration.'system.webServer'.aspNetCore
+    $systemWebServerNode = $webConfig.configuration.'system.webServer'
+    if ($null -eq $systemWebServerNode) {
+        throw "Noeud system.webServer introuvable dans web.config."
+    }
+
+    $aspNetCoreNode = $systemWebServerNode.aspNetCore
     if ($null -eq $aspNetCoreNode) {
         throw "Noeud aspNetCore introuvable dans web.config."
     }
@@ -325,8 +316,8 @@ function Grant-AppPoolPermissions {
 
 function Ensure-WebBinding {
     param(
-        [string]$HostHeader,
-        [int]$Port
+        [Parameter(Mandatory = $true)][string]$HostHeader,
+        [Parameter(Mandatory = $true)][int]$Port
     )
 
     Import-Module WebAdministration
@@ -338,13 +329,7 @@ function Ensure-WebBinding {
         Select-Object -First 1
 
     if ($null -eq $existing) {
-        New-WebBinding `
-            -Name $SiteName `
-            -Protocol "http" `
-            -IPAddress "*" `
-            -Port $Port `
-            -HostHeader $HostHeader
-
+        New-WebBinding -Name $SiteName -Protocol "http" -IPAddress "*" -Port $Port -HostHeader $HostHeader
         Write-Host "Binding ajoute sur $SiteName : $expectedBinding"
     }
     else {
@@ -354,8 +339,8 @@ function Ensure-WebBinding {
 
 function Ensure-FirewallRule {
     param(
-        [string]$RuleName,
-        [int]$Port
+        [Parameter(Mandatory = $true)][string]$RuleName,
+        [Parameter(Mandatory = $true)][int]$Port
     )
 
     Write-Host "Verification pare-feu via netsh : $RuleName"
@@ -409,11 +394,7 @@ function Remove-ObsoletePort5100 {
         Where-Object { $_.bindingInformation -like "*:5100:*" }
 
     foreach ($binding in $bindings) {
-        Remove-WebBinding `
-            -Name $SiteName `
-            -Protocol $binding.protocol `
-            -BindingInformation $binding.bindingInformation
-
+        Remove-WebBinding -Name $SiteName -Protocol $binding.protocol -BindingInformation $binding.bindingInformation
         Write-Host "Binding port 5100 supprime : $($binding.bindingInformation)"
     }
 
@@ -447,14 +428,38 @@ function Remove-ObsoletePort5100 {
     }
 }
 
+function Restart-IisApplication {
+    Write-Step "Redemarrage IIS"
+
+    Import-Module WebAdministration
+
+    $appPool = Get-Item "IIS:\AppPools\$AppPoolName" -ErrorAction SilentlyContinue
+    if ($null -eq $appPool) {
+        throw "AppPool introuvable : $AppPoolName"
+    }
+
+    $site = Get-Website -Name $SiteName -ErrorAction SilentlyContinue
+    if ($null -eq $site) {
+        throw "Site IIS introuvable : $SiteName"
+    }
+
+    if ($site.State -ne "Started") {
+        Start-Website -Name $SiteName
+    }
+
+    Restart-WebAppPool -Name $AppPoolName
+    Start-Sleep -Seconds 3
+}
+
 function Test-HttpEndpoint {
-    param([string]$Url)
+    param([Parameter(Mandatory = $true)][string]$Url)
 
     try {
         $response = Invoke-WebRequest `
             -Uri $Url `
             -UseBasicParsing `
             -MaximumRedirection 0 `
+            -TimeoutSec 10 `
             -ErrorAction SilentlyContinue
 
         $statusCode = [int]$response.StatusCode
@@ -539,9 +544,9 @@ $env:ExpeditionApi__BaseUrl = $ApiBaseUrl
 Sync-GitRepository
 Expand-Artifact
 Backup-CurrentDeployment
-Stop-IisApplication
 
 try {
+    Enable-AppOffline
     Deploy-PublishedFiles
     Ensure-ScheduledLockScript
     Ensure-WebConfigEnvironment -WebConfigPath (Join-Path $DeployPath "web.config")
@@ -552,12 +557,12 @@ try {
 catch {
     Write-Step "Erreur pendant le deploiement"
     Write-Host $_.Exception.Message
-    Write-Host "Tentative de redemarrage IIS avec la version disponible."
-    Start-IisApplication
+    Disable-AppOffline
     throw
 }
 
-Start-IisApplication
+Disable-AppOffline
+Restart-IisApplication
 Run-FinalChecks
 
 Write-Step "Mise a jour terminee"
