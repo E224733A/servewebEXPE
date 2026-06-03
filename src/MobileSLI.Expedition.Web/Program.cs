@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Options;
+using MobileSLI.Expedition.Web.Application.Common;
 using MobileSLI.Expedition.Web.Application.Administration;
 using MobileSLI.Expedition.Web.Application.Expedition;
 using MobileSLI.Expedition.Web.Background;
@@ -16,6 +17,7 @@ builder.Services.Configure<VerrouillageOptions>(builder.Configuration.GetSection
 builder.Services.Configure<AccessControlOptions>(builder.Configuration.GetSection(AccessControlOptions.SectionName));
 
 builder.Services.AddSingleton<IExpeditionDraftStore, SqliteExpeditionDraftStore>();
+builder.Services.AddScoped<SharedPreparationViewModelBuilder>();
 builder.Services.AddScoped<ExpeditionPreparationViewModelBuilder>();
 builder.Services.AddScoped<AdministrationViewModelBuilder>();
 builder.Services.AddScoped<VerrouillageService>();
