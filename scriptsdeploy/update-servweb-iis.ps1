@@ -221,24 +221,44 @@ function Ensure-ScheduledLockScript {
     }
 }
 
+function Get-OrCreate-XmlChild {
+    param(
+        [Parameter(Mandatory = $true)][xml]$Document,
+        [Parameter(Mandatory = $true)][System.Xml.XmlNode]$Parent,
+        [Parameter(Mandatory = $true)][string]$Name
+    )
+
+    $child = $Parent.SelectSingleNode($Name)
+
+    if ($null -eq $child) {
+        $child = $Document.CreateElement($Name)
+        [void]$Parent.AppendChild($child)
+    }
+
+    return $child
+}
+
 function Set-WebConfigEnvironmentVariable {
     param(
         [Parameter(Mandatory = $true)][xml]$WebConfig,
-        [Parameter(Mandatory = $true)][System.Xml.XmlElement]$AspNetCoreNode,
+        [Parameter(Mandatory = $true)][System.Xml.XmlNode]$AspNetCoreNode,
         [Parameter(Mandatory = $true)][string]$Name,
         [Parameter(Mandatory = $true)][string]$Value
     )
 
-    $environmentVariablesNode = $AspNetCoreNode.environmentVariables
+    $environmentVariablesNode = Get-OrCreate-XmlChild `
+        -Document $WebConfig `
+        -Parent $AspNetCoreNode `
+        -Name "environmentVariables"
 
-    if ($null -eq $environmentVariablesNode) {
-        $environmentVariablesNode = $WebConfig.CreateElement("environmentVariables")
-        [void]$AspNetCoreNode.AppendChild($environmentVariablesNode)
+    $existingNode = $null
+
+    foreach ($node in $environmentVariablesNode.SelectNodes("environmentVariable")) {
+        if ($node.GetAttribute("name") -eq $Name) {
+            $existingNode = $node
+            break
+        }
     }
-
-    $existingNode = $environmentVariablesNode.environmentVariable |
-        Where-Object { $_.name -eq $Name } |
-        Select-Object -First 1
 
     if ($null -eq $existingNode) {
         $existingNode = $WebConfig.CreateElement("environmentVariable")
@@ -254,7 +274,7 @@ function Set-WebConfigEnvironmentVariable {
         [void]$environmentVariablesNode.AppendChild($existingNode)
     }
     else {
-        $existingNode.value = $Value
+        $existingNode.SetAttribute("value", $Value)
     }
 }
 
@@ -269,14 +289,20 @@ function Ensure-WebConfigEnvironment {
 
     [xml]$webConfig = Get-Content $WebConfigPath -Raw
 
-    $systemWebServerNode = $webConfig.configuration.'system.webServer'
-    if ($null -eq $systemWebServerNode) {
-        throw "Noeud system.webServer introuvable dans web.config."
+    $configurationNode = $webConfig.SelectSingleNode("/configuration")
+    if ($null -eq $configurationNode) {
+        throw "Noeud /configuration introuvable dans web.config."
     }
 
-    $aspNetCoreNode = $systemWebServerNode.aspNetCore
+    $systemWebServerNode = $webConfig.SelectSingleNode("/configuration/system.webServer")
+    if ($null -eq $systemWebServerNode) {
+        $systemWebServerNode = $webConfig.CreateElement("system.webServer")
+        [void]$configurationNode.AppendChild($systemWebServerNode)
+    }
+
+    $aspNetCoreNode = $webConfig.SelectSingleNode("/configuration/system.webServer/aspNetCore")
     if ($null -eq $aspNetCoreNode) {
-        throw "Noeud aspNetCore introuvable dans web.config."
+        throw "Noeud /configuration/system.webServer/aspNetCore introuvable dans web.config. Le web.config publie n'est pas un web.config ASP.NET Core IIS valide."
     }
 
     Set-WebConfigEnvironmentVariable `
