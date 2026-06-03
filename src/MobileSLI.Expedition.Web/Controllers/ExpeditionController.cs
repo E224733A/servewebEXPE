@@ -7,9 +7,6 @@ using MobileSLI.Expedition.Web.Models;
 using MobileSLI.Expedition.Web.Options;
 using MobileSLI.Expedition.Web.Services;
 using MobileSLI.Expedition.Web.ViewModels;
-// Import des constantes et règles métier afin d’éviter les chaînes magiques.
-// Les constantes se trouvent dans le namespace Domain.Constants de la partie Web et les règles dans Domain.Rules.
-using DomainArticleCodes = MobileSLI.Expedition.Web.Domain.Constants.ArticleCodes;
 using DomainDraftStatuses = MobileSLI.Expedition.Web.Domain.Constants.DraftStatuses;
 using DomainLotStatuses = MobileSLI.Expedition.Web.Domain.Constants.LotStatuses;
 using MobileSLI.Expedition.Web.Domain.Rules;
@@ -20,6 +17,7 @@ public sealed class ExpeditionController : Controller
 {
     private readonly IExpeditionApiClient _apiClient;
     private readonly IExpeditionDraftStore _draftStore;
+    private readonly ExpeditionPreparationViewModelBuilder _viewModelBuilder;
     private readonly VerrouillageService _verrouillageService;
     private readonly IWebHostEnvironment _environment;
     private readonly VerrouillageOptions _verrouillageOptions;
@@ -28,6 +26,7 @@ public sealed class ExpeditionController : Controller
     public ExpeditionController(
         IExpeditionApiClient apiClient,
         IExpeditionDraftStore draftStore,
+        ExpeditionPreparationViewModelBuilder viewModelBuilder,
         VerrouillageService verrouillageService,
         IWebHostEnvironment environment,
         IOptions<VerrouillageOptions> verrouillageOptions,
@@ -35,6 +34,7 @@ public sealed class ExpeditionController : Controller
     {
         _apiClient = apiClient;
         _draftStore = draftStore;
+        _viewModelBuilder = viewModelBuilder;
         _verrouillageService = verrouillageService;
         _environment = environment;
         _verrouillageOptions = verrouillageOptions.Value;
@@ -57,15 +57,7 @@ public sealed class ExpeditionController : Controller
     [HttpGet("/expedition")]
     public async Task<IActionResult> Index(CancellationToken cancellationToken)
     {
-        var load = await _draftStore.GetLastLoadedDataAsync(cancellationToken);
-        var locks = await _draftStore.GetRecentLockHistoryAsync(5, cancellationToken);
-        var model = new HomeIndexViewModel
-        {
-            HasLoadedData = load is not null,
-            DateTournee = load?.DateTournee,
-            TourneesCount = load?.Tournees.Count ?? 0,
-            RecentLocks = locks
-        };
+        var model = await _viewModelBuilder.BuildHomeIndexAsync(cancellationToken);
         return View(model);
     }
 
@@ -76,7 +68,6 @@ public sealed class ExpeditionController : Controller
         try
         {
             var response = await _apiClient.GetPreparationsAsync(cancellationToken);
-            // Utilise une constante centralisée pour vérifier le statut de succès retourné par l’API.
             if (!string.Equals(response.Statut, DomainLotStatuses.Success, StringComparison.OrdinalIgnoreCase))
             {
                 TempData["Error"] = $"Le chargement a été refusé par l'API : {response.Statut}.";
@@ -118,40 +109,20 @@ public sealed class ExpeditionController : Controller
     [HttpGet("/expedition/tournees")]
     public async Task<IActionResult> Tournees(CancellationToken cancellationToken)
     {
-        var load = await _draftStore.GetLastLoadedDataAsync(cancellationToken);
-        if (load is null)
+        var model = await _viewModelBuilder.BuildTourneesIndexAsync(cancellationToken);
+        if (model is null)
         {
             TempData["Error"] = "Aucune donnée Expédition n'a encore été chargée.";
             return RedirectToAction(nameof(Index));
         }
 
-        var states = await _draftStore.GetTourneeStatesAsync(load.DateTournee, cancellationToken);
-        var model = new TourneesIndexViewModel
-        {
-            DateTournee = load.DateTournee,
-            FuseauHoraireMetier = load.FuseauHoraireMetier,
-            Tournees = load.Tournees.OrderBy(t => t.CodeTournee).Select(t =>
-            {
-                states.TryGetValue(t.CodeTournee, out var state);
-                var isLocked = t.EstVerrouilleeBd || state?.IsLocked == true;
-                return new TourneeListItemViewModel
-                {
-                    CodeTournee = t.CodeTournee,
-                    LibelleTournee = t.LibelleTournee,
-                    // Utilise la constante pour l'état Verrouillé.
-                    EtatPreparation = isLocked ? DomainDraftStatuses.Verrouille : state?.Status ?? t.EtatPreparation,
-                    IsLocked = isLocked,
-                    NombreLignes = t.Lignes.Count
-                };
-            }).ToList()
-        };
         return View(model);
     }
 
     [HttpGet("/expedition/tournees/{codeTournee}/preparer")]
     public async Task<IActionResult> Preparer(string codeTournee, CancellationToken cancellationToken)
     {
-        var model = await BuildPreparationViewModelAsync(codeTournee, cancellationToken);
+        var model = await _viewModelBuilder.BuildPreparationAsync(codeTournee, cancellationToken);
         if (model is null)
         {
             TempData["Error"] = "La tournée demandée n'existe pas dans les données chargées.";
@@ -164,18 +135,17 @@ public sealed class ExpeditionController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Preparer(string codeTournee, PreparationInputModel input, CancellationToken cancellationToken)
     {
-        // Lors de l'enregistrement, on passe explicitement le statut de brouillon à l'aide de la constante centralisée.
         var result = await SavePreparationDraftAsync(codeTournee, input, DomainDraftStatuses.Brouillon, cancellationToken);
         if (!result.Success)
         {
-            var invalidModel = await BuildPreparationViewModelAsync(codeTournee, cancellationToken);
+            var invalidModel = await _viewModelBuilder.BuildPreparationAsync(codeTournee, cancellationToken);
             if (invalidModel is null)
             {
                 return RedirectToAction(nameof(Tournees));
             }
 
             ModelState.AddModelError(string.Empty, result.Message ?? "Erreur inconnue pendant l'enregistrement du brouillon.");
-            ReapplyInputValues(invalidModel, input);
+            _viewModelBuilder.ReapplyInputValues(invalidModel, input);
             return View(invalidModel);
         }
 
@@ -191,7 +161,7 @@ public sealed class ExpeditionController : Controller
     [HttpGet("/expedition/tournees/{codeTournee}/lignes/detail")]
     public async Task<IActionResult> DetailLigne(string codeTournee, string idLigneSource, CancellationToken cancellationToken)
     {
-        var model = await BuildPreparationViewModelAsync(codeTournee, cancellationToken);
+        var model = await _viewModelBuilder.BuildPreparationAsync(codeTournee, cancellationToken);
         if (model is null)
         {
             TempData["Error"] = "La tournée demandée n'existe pas dans les données chargées.";
@@ -232,7 +202,7 @@ public sealed class ExpeditionController : Controller
     [HttpGet("/expedition/tournees/{codeTournee}/recapitulatif")]
     public async Task<IActionResult> Recapitulatif(string codeTournee, CancellationToken cancellationToken)
     {
-        var model = await BuildPreparationViewModelAsync(codeTournee, cancellationToken);
+        var model = await _viewModelBuilder.BuildPreparationAsync(codeTournee, cancellationToken);
         if (model is null)
         {
             TempData["Error"] = "La tournée demandée n'existe pas dans les données chargées.";
@@ -245,7 +215,7 @@ public sealed class ExpeditionController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> MarquerPretPourVerrouillage(string codeTournee, CancellationToken cancellationToken)
     {
-        var model = await BuildPreparationViewModelAsync(codeTournee, cancellationToken);
+        var model = await _viewModelBuilder.BuildPreparationAsync(codeTournee, cancellationToken);
         if (model is null)
         {
             TempData["Error"] = "La tournée demandée n'existe pas dans les données chargées.";
@@ -308,101 +278,6 @@ public sealed class ExpeditionController : Controller
         return RedirectToAction(nameof(Recapitulatif), new { codeTournee });
     }
 
-    private async Task<PreparationTourneeViewModel?> BuildPreparationViewModelAsync(string codeTournee, CancellationToken cancellationToken)
-    {
-        var load = await _draftStore.GetLastLoadedDataAsync(cancellationToken);
-        var tournee = load?.Tournees.FirstOrDefault(t => string.Equals(t.CodeTournee, codeTournee, StringComparison.OrdinalIgnoreCase));
-        if (load is null || tournee is null)
-        {
-            return null;
-        }
-
-        var tourneeState = await _draftStore.GetTourneeStateAsync(load.DateTournee, codeTournee, cancellationToken);
-        var lineStates = await _draftStore.GetLineStatesAsync(load.DateTournee, codeTournee, cancellationToken);
-        var isReadOnly = tournee.EstVerrouilleeBd || tourneeState?.IsLocked == true;
-        var articlesPrepares = BuildArticlesPrepares(load.ArticlesSuivis);
-
-        var model = new PreparationTourneeViewModel
-        {
-            DateTournee = load.DateTournee,
-            CodeTournee = tournee.CodeTournee,
-            LibelleTournee = tournee.LibelleTournee,
-            // Utilise la constante Verrouille de Domain pour marquer l’état si verrouillé.
-            EtatPreparation = isReadOnly ? DomainDraftStatuses.Verrouille : tourneeState?.Status ?? tournee.EtatPreparation,
-            IsReadOnly = isReadOnly,
-            IsAdministrationMode = false,
-            Articles = articlesPrepares,
-            Lignes = []
-        };
-
-        foreach (var ligne in tournee.Lignes.OrderBy(l => l.OrdreArret))
-        {
-            lineStates.TryGetValue(ligne.IdLigneSource, out var lineState);
-            var vm = new PreparationLigneViewModel
-            {
-                IdLigneSource = ligne.IdLigneSource,
-                OrdreArret = ligne.OrdreArret,
-                NumClient = ligne.Client.NumClient,
-                NomClient = string.IsNullOrWhiteSpace(ligne.Client.NomAffiche) ? ligne.Client.NomClient : ligne.Client.NomAffiche,
-                CodePDL = ligne.PointLivraison.CodePDL,
-                DescriptionPDL = ligne.PointLivraison.DescriptionPDL,
-                Adresse = BuildAddress(ligne.PointLivraison),
-                Instructions = ligne.InfosLecture.Instructions,
-                ZoneDechargement = ligne.InfosLecture.ZoneDechargement,
-                FermetureClient = ligne.InfosLecture.FermetureClient,
-                CommentaireExceptionnel = null,
-                DerniereModificationUtc = lineState?.LastModifiedQuantiteUtc,
-                Quantites = new Dictionary<string, int?>(StringComparer.OrdinalIgnoreCase)
-            };
-
-            foreach (var article in articlesPrepares)
-            {
-                vm.Quantites[article.CodeArticle] = lineState is not null && lineState.Quantites.TryGetValue(article.CodeArticle, out var stored)
-                    ? stored
-                    : ligne.BrouillonInitial.Quantites.FirstOrDefault(q => string.Equals(q.CodeArticle, article.CodeArticle, StringComparison.OrdinalIgnoreCase))?.QuantiteLivreePrevue;
-            }
-            model.Lignes.Add(vm);
-        }
-
-        return model;
-    }
-
-    private static List<ArticleSuiviDto> BuildArticlesPrepares(List<ArticleSuiviDto> articles)
-    {
-        // Articles suivis par défaut : utilise des constantes pour éviter les chaînes magiques.
-        var defaults = new[]
-        {
-            new ArticleSuiviDto { CodeArticle = DomainArticleCodes.Rolls, LibelleArticle = "Chariots", TypeQuantite = "LIVREE_PREVUE" },
-            new ArticleSuiviDto { CodeArticle = DomainArticleCodes.RollsVides, LibelleArticle = "Chariots vides", TypeQuantite = "LIVREE_PREVUE" },
-            new ArticleSuiviDto { CodeArticle = DomainArticleCodes.Tapis, LibelleArticle = "Tapis", TypeQuantite = "LIVREE_PREVUE" },
-            new ArticleSuiviDto { CodeArticle = DomainArticleCodes.Sacs, LibelleArticle = "Sacs", TypeQuantite = "LIVREE_PREVUE" }
-        };
-        return defaults.Select(defaultArticle => articles.FirstOrDefault(a => string.Equals(a.CodeArticle, defaultArticle.CodeArticle, StringComparison.OrdinalIgnoreCase)) ?? defaultArticle).ToList();
-    }
-
-    private static void ReapplyInputValues(PreparationTourneeViewModel model, PreparationInputModel input)
-    {
-        var inputByLine = input.Lignes.ToDictionary(l => l.IdLigneSource, StringComparer.OrdinalIgnoreCase);
-        foreach (var ligne in model.Lignes)
-        {
-            if (!inputByLine.TryGetValue(ligne.IdLigneSource, out var inputLine))
-            {
-                continue;
-            }
-
-            foreach (var quantite in inputLine.Quantites.Where(q => !string.IsNullOrWhiteSpace(q.CodeArticle)))
-            {
-                ligne.Quantites[quantite.CodeArticle] = quantite.QuantiteLivreePrevue;
-            }
-        }
-    }
-
-    private static string BuildAddress(PointLivraisonDto point)
-    {
-        var parts = new[] { point.AdresseLigne1, point.AdresseLigne2, point.AdresseLigne3, string.Join(' ', new[] { point.CodePostal, point.Ville }.Where(v => !string.IsNullOrWhiteSpace(v))) };
-        return string.Join(" - ", parts.Where(p => !string.IsNullOrWhiteSpace(p)));
-    }
-
     private async Task<SavePreparationResult> SavePreparationDraftAsync(string codeTournee, PreparationInputModel input, string status, CancellationToken cancellationToken)
     {
         var load = await _draftStore.GetLastLoadedDataAsync(cancellationToken);
@@ -418,7 +293,7 @@ public sealed class ExpeditionController : Controller
             return SavePreparationResult.Fail("Cette tournée est verrouillée. La modification est refusée.");
         }
 
-        var articles = BuildArticlesPrepares(load.ArticlesSuivis);
+        var articles = _viewModelBuilder.BuildArticlesPrepares(load.ArticlesSuivis);
         var errors = ExpeditionPreparationValidator.Validate(input, tournee, articles);
         if (errors.Count > 0)
         {
@@ -460,23 +335,15 @@ public sealed class ExpeditionController : Controller
 
     private static string ResolveStatusAfterExpeditionUpdate(string requestedStatus, string? currentStatus)
     {
-        // Si on passe en brouillon alors que la tournée est déjà prête, conserver l'état prêt.
         if (string.Equals(requestedStatus, DomainDraftStatuses.Brouillon, StringComparison.OrdinalIgnoreCase)
             && ExpeditionRules.IsReadyForLockStatus(currentStatus))
         {
-            // Règle métier : une tournée prête pour verrouillage reste prête.
-            // Une correction de quantité ne doit jamais la refaire passer en brouillon.
             return string.IsNullOrWhiteSpace(currentStatus) ? DomainDraftStatuses.PretVerrouillage : currentStatus!;
         }
 
         return requestedStatus;
     }
 
-    private static bool IsReadyForLockStatus(string? status)
-    {
-        // Délègue la logique de détection des statuts prêts pour verrouillage à la règle centralisée.
-        return ExpeditionRules.IsReadyForLockStatus(status);
-    }
 
     private sealed record SavePreparationResult(bool Success, string? Message, bool StatusConservePretVerrouillage)
     {

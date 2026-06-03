@@ -1,4 +1,6 @@
 using Microsoft.Extensions.Options;
+using MobileSLI.Expedition.Web.Application.Administration;
+using MobileSLI.Expedition.Web.Application.Expedition;
 using MobileSLI.Expedition.Web.Background;
 using MobileSLI.Expedition.Web.Data;
 using MobileSLI.Expedition.Web.Options;
@@ -14,6 +16,8 @@ builder.Services.Configure<VerrouillageOptions>(builder.Configuration.GetSection
 builder.Services.Configure<AccessControlOptions>(builder.Configuration.GetSection(AccessControlOptions.SectionName));
 
 builder.Services.AddSingleton<IExpeditionDraftStore, SqliteExpeditionDraftStore>();
+builder.Services.AddScoped<ExpeditionPreparationViewModelBuilder>();
+builder.Services.AddScoped<AdministrationViewModelBuilder>();
 builder.Services.AddScoped<VerrouillageService>();
 
 // Version finale : le client web utilise toujours l'API centrale réelle.

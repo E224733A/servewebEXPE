@@ -4,10 +4,6 @@ using MobileSLI.Expedition.Web.Data;
 using MobileSLI.Expedition.Web.Models;
 using MobileSLI.Expedition.Web.Services;
 using MobileSLI.Expedition.Web.ViewModels;
-// Import des constantes métier pour éviter les chaînes magiques et clarifier l'origine des statuts.
-// Les constantes se trouvent dans le namespace Domain.Constants de la partie Web.
-using DomainArticleCodes = MobileSLI.Expedition.Web.Domain.Constants.ArticleCodes;
-using DomainDraftStatuses = MobileSLI.Expedition.Web.Domain.Constants.DraftStatuses;
 using DomainLotStatuses = MobileSLI.Expedition.Web.Domain.Constants.LotStatuses;
 
 namespace MobileSLI.Expedition.Web.Controllers;
@@ -16,31 +12,25 @@ public sealed class AdministrationController : Controller
 {
     private readonly IExpeditionApiClient _apiClient;
     private readonly IExpeditionDraftStore _draftStore;
+    private readonly AdministrationViewModelBuilder _viewModelBuilder;
     private readonly ILogger<AdministrationController> _logger;
 
     public AdministrationController(
         IExpeditionApiClient apiClient,
         IExpeditionDraftStore draftStore,
+        AdministrationViewModelBuilder viewModelBuilder,
         ILogger<AdministrationController> logger)
     {
         _apiClient = apiClient;
         _draftStore = draftStore;
+        _viewModelBuilder = viewModelBuilder;
         _logger = logger;
     }
 
     [HttpGet("/administration")]
     public async Task<IActionResult> Index(CancellationToken cancellationToken)
     {
-        var load = await _draftStore.GetLastLoadedDataAsync(cancellationToken);
-        var locks = await _draftStore.GetRecentLockHistoryAsync(5, cancellationToken);
-        var model = new HomeIndexViewModel
-        {
-            HasLoadedData = load is not null,
-            DateTournee = load?.DateTournee,
-            TourneesCount = load?.Tournees.Count ?? 0,
-            RecentLocks = locks
-        };
-
+        var model = await _viewModelBuilder.BuildHomeIndexAsync(cancellationToken);
         return View(model);
     }
 
@@ -51,7 +41,6 @@ public sealed class AdministrationController : Controller
         try
         {
             var response = await _apiClient.GetPreparationsAsync(cancellationToken);
-            // Utilise une constante pour vérifier le statut de succès retourné par l'API afin d'éviter les chaînes magiques.
             if (!string.Equals(response.Statut, DomainLotStatuses.Success, StringComparison.OrdinalIgnoreCase))
             {
                 TempData["Error"] = $"Le chargement a été refusé par l'API : {response.Statut}.";
@@ -93,35 +82,12 @@ public sealed class AdministrationController : Controller
     [HttpGet("/administration/tournees")]
     public async Task<IActionResult> Tournees(CancellationToken cancellationToken)
     {
-        var load = await _draftStore.GetLastLoadedDataAsync(cancellationToken);
-        if (load is null)
+        var model = await _viewModelBuilder.BuildTourneesIndexAsync(cancellationToken);
+        if (model is null)
         {
             TempData["Error"] = "Aucune donnée Administration n'a encore été chargée.";
             return RedirectToAction(nameof(Index));
         }
-
-        var states = await _draftStore.GetTourneeStatesAsync(load.DateTournee, cancellationToken);
-        var model = new TourneesIndexViewModel
-        {
-            DateTournee = load.DateTournee,
-            FuseauHoraireMetier = load.FuseauHoraireMetier,
-            Tournees = load.Tournees
-                .OrderBy(t => t.CodeTournee)
-                .Select(t =>
-                {
-                    states.TryGetValue(t.CodeTournee, out var state);
-                    var isLocked = t.EstVerrouilleeBd || state?.IsLocked == true;
-                    return new TourneeListItemViewModel
-                    {
-                        CodeTournee = t.CodeTournee,
-                        LibelleTournee = t.LibelleTournee,
-                        EtatPreparation = isLocked ? DomainDraftStatuses.Verrouille : state?.Status ?? t.EtatPreparation,
-                        IsLocked = isLocked,
-                        NombreLignes = t.Lignes.Count
-                    };
-                })
-                .ToList()
-        };
 
         return View(model);
     }
@@ -129,7 +95,7 @@ public sealed class AdministrationController : Controller
     [HttpGet("/administration/tournees/{codeTournee}/commentaires")]
     public async Task<IActionResult> Commentaires(string codeTournee, CancellationToken cancellationToken)
     {
-        var model = await BuildPreparationViewModelAsync(codeTournee, cancellationToken);
+        var model = await _viewModelBuilder.BuildPreparationAsync(codeTournee, cancellationToken);
         if (model is null)
         {
             TempData["Error"] = "La tournée demandée n'existe pas dans les données chargées.";
@@ -191,90 +157,5 @@ public sealed class AdministrationController : Controller
         }
 
         return RedirectToAction(nameof(Commentaires), new { codeTournee });
-    }
-
-    private async Task<PreparationTourneeViewModel?> BuildPreparationViewModelAsync(string codeTournee, CancellationToken cancellationToken)
-    {
-        var load = await _draftStore.GetLastLoadedDataAsync(cancellationToken);
-        var tournee = load?.Tournees.FirstOrDefault(t => string.Equals(t.CodeTournee, codeTournee, StringComparison.OrdinalIgnoreCase));
-        if (load is null || tournee is null)
-        {
-            return null;
-        }
-
-        var tourneeState = await _draftStore.GetTourneeStateAsync(load.DateTournee, codeTournee, cancellationToken);
-        var lineStates = await _draftStore.GetLineStatesAsync(load.DateTournee, codeTournee, cancellationToken);
-        var isReadOnly = tournee.EstVerrouilleeBd || tourneeState?.IsLocked == true;
-
-        var model = new PreparationTourneeViewModel
-        {
-            DateTournee = load.DateTournee,
-            CodeTournee = tournee.CodeTournee,
-            LibelleTournee = tournee.LibelleTournee,
-            EtatPreparation = isReadOnly ? DomainDraftStatuses.Verrouille : tourneeState?.Status ?? tournee.EtatPreparation,
-            IsReadOnly = isReadOnly,
-            IsAdministrationMode = true,
-            Articles = BuildArticlesPrepares(load.ArticlesSuivis),
-            Lignes = []
-        };
-
-        foreach (var ligne in tournee.Lignes.OrderBy(l => l.OrdreArret))
-        {
-            lineStates.TryGetValue(ligne.IdLigneSource, out var lineState);
-            var quantites = new Dictionary<string, int?>(StringComparer.OrdinalIgnoreCase);
-            foreach (var article in model.Articles)
-            {
-                quantites[article.CodeArticle] = lineState is not null && lineState.Quantites.TryGetValue(article.CodeArticle, out var stored)
-                    ? stored
-                    : ligne.BrouillonInitial.Quantites.FirstOrDefault(q => string.Equals(q.CodeArticle, article.CodeArticle, StringComparison.OrdinalIgnoreCase))?.QuantiteLivreePrevue;
-            }
-
-            model.Lignes.Add(new PreparationLigneViewModel
-            {
-                IdLigneSource = ligne.IdLigneSource,
-                OrdreArret = ligne.OrdreArret,
-                NumClient = ligne.Client.NumClient,
-                NomClient = string.IsNullOrWhiteSpace(ligne.Client.NomAffiche) ? ligne.Client.NomClient : ligne.Client.NomAffiche,
-                CodePDL = ligne.PointLivraison.CodePDL,
-                DescriptionPDL = ligne.PointLivraison.DescriptionPDL,
-                Adresse = BuildAddress(ligne.PointLivraison),
-                Instructions = ligne.InfosLecture.Instructions,
-                ZoneDechargement = ligne.InfosLecture.ZoneDechargement,
-                FermetureClient = ligne.InfosLecture.FermetureClient,
-                CommentaireExceptionnel = lineState?.CommentaireExceptionnel ?? ligne.BrouillonInitial.CommentaireExceptionnel,
-                DerniereModificationUtc = lineState?.LastModifiedCommentaireUtc,
-                Quantites = quantites
-            });
-        }
-
-        return model;
-    }
-
-    private static List<ArticleSuiviDto> BuildArticlesPrepares(List<ArticleSuiviDto> articles)
-    {
-        // Centralisation des codes articles pour éviter la répétition de chaînes magiques.
-        var defaults = new[]
-        {
-            new ArticleSuiviDto { CodeArticle = DomainArticleCodes.Rolls, LibelleArticle = "Rolls pleins", TypeQuantite = "LIVREE_PREVUE" },
-            new ArticleSuiviDto { CodeArticle = DomainArticleCodes.Tapis, LibelleArticle = "Tapis", TypeQuantite = "LIVREE_PREVUE" },
-            new ArticleSuiviDto { CodeArticle = DomainArticleCodes.Sacs, LibelleArticle = "Sacs", TypeQuantite = "LIVREE_PREVUE" }
-        };
-
-        return defaults.Select(defaultArticle =>
-            articles.FirstOrDefault(a => string.Equals(a.CodeArticle, defaultArticle.CodeArticle, StringComparison.OrdinalIgnoreCase))
-            ?? defaultArticle).ToList();
-    }
-
-    private static string BuildAddress(PointLivraisonDto point)
-    {
-        var parts = new[]
-        {
-            point.AdresseLigne1,
-            point.AdresseLigne2,
-            point.AdresseLigne3,
-            string.Join(' ', new[] { point.CodePostal, point.Ville }.Where(v => !string.IsNullOrWhiteSpace(v)))
-        };
-
-        return string.Join(" - ", parts.Where(p => !string.IsNullOrWhiteSpace(p)));
     }
 }
