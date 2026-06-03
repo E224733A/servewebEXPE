@@ -1,458 +1,508 @@
-#requires -RunAsAdministrator
-<#
-CONFIGURATION IIS INITIALE - SERVWEB - ETAT FINAL DNS NETTOYE
-
-Ce script sert à reconstruire proprement le site SERVEXPE avec l'état final :
-- port utilisateur 80 uniquement ;
-- host headers expedition.sli.local et admin.sli.local ;
-- host header localhost pour la tâche Windows de verrouillage ;
-- aucun port 5100.
-#>
-
 $ErrorActionPreference = "Stop"
+Set-StrictMode -Version Latest
+
+$RepoRoot = "C:\Sources\servewebEXPE"
+$ProjectDir = Join-Path $RepoRoot "src\MobileSLI.Expedition.Web"
+$ProjectPath = Join-Path $ProjectDir "MobileSLI.Expedition.Web.csproj"
+$PublishDir = "C:\Publish\MobileSLI.Expedition.Web"
+$DeployDir = "C:\Services\MobileSLI.Expedition.Web"
+$BackupRoot = "C:\Backups\MobileSLI.Expedition.Web"
 
 $SiteName = "MobileSLI.Expedition.Web"
 $AppPoolName = "MobileSLI.Expedition.Web"
-$SourcePath = "C:\Sources\servewebEXPE"
-$ProjectPath = ".\src\MobileSLI.Expedition.Web\MobileSLI.Expedition.Web.csproj"
-$PublishPath = "C:\Publish\MobileSLI.Expedition.Web"
-$DeployPath = "C:\Services\MobileSLI.Expedition.Web"
-$BackupRoot = "C:\Backups\MobileSLI.Expedition.Web"
 
-$WebPort = 80
-$ExpeditionDns = "expedition.sli.local"
-$AdministrationDns = "admin.sli.local"
-$LocalLockHost = "localhost"
+$ExpeditionUrl = "http://expedition.sli.local"
+$AdministrationUrl = "http://admin.sli.local"
+$LocalVerrouillageUrl = "http://localhost/verrouillage/executer"
+$ApiBaseUrl = "http://api.mobilesli.intra:5000/"
+$AspNetEnvironment = "Development"
 
-$ApiDns = "api.mobilesli.intra"
-$ApiBaseUrl = "http://${ApiDns}:5000/"
-$ApiHealthUrl = "http://${ApiDns}:5000/api/health"
-$AspNetCoreEnvironment = "Development"
+$FirewallRuleName = "ServeWebEXPE HTTP 80"
 
-function Write-Step {
-    param([string]$Message)
+function Write-Section {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string] $Title
+    )
+
     Write-Host ""
-    Write-Host "============================================================" -ForegroundColor Cyan
-    Write-Host $Message -ForegroundColor Cyan
-    Write-Host "============================================================" -ForegroundColor Cyan
+    Write-Host "============================================================"
+    Write-Host $Title
+    Write-Host "============================================================"
 }
 
-function Assert-PathExists {
-    param([string]$Path, [string]$Message)
-    if (-not (Test-Path $Path)) {
-        throw "$Message : $Path"
+function Invoke-ExternalCommand {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string] $FilePath,
+
+        [Parameter(Mandatory = $true)]
+        [string[]] $Arguments,
+
+        [Parameter(Mandatory = $true)]
+        [string] $ErrorMessage
+    )
+
+    & $FilePath @Arguments
+
+    if ($LASTEXITCODE -ne 0) {
+        throw $ErrorMessage
     }
 }
 
-function Enable-IisFeatures {
-    Write-Step "Activation IIS et outils de scripting"
+function Invoke-RobocopyChecked {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string] $Source,
 
-    if (Get-Command Install-WindowsFeature -ErrorAction SilentlyContinue) {
-        Install-WindowsFeature Web-Server, Web-Mgmt-Console, Web-Scripting-Tools, Web-Static-Content, Web-Default-Doc, Web-Http-Errors, Web-Http-Logging, Web-Filtering -IncludeManagementTools | Out-Host
-    }
-    else {
-        $features = @(
-            "IIS-WebServerRole",
-            "IIS-WebServer",
-            "IIS-ManagementConsole",
-            "IIS-ManagementScriptingTools",
-            "IIS-StaticContent",
-            "IIS-DefaultDocument",
-            "IIS-HttpErrors",
-            "IIS-HttpLogging",
-            "IIS-RequestFiltering"
-        )
+        [Parameter(Mandatory = $true)]
+        [string] $Destination,
 
-        foreach ($feature in $features) {
-            Enable-WindowsOptionalFeature -Online -FeatureName $feature -All -NoRestart | Out-Host
-        }
+        [Parameter(Mandatory = $true)]
+        [string[]] $Arguments
+    )
+
+    & robocopy $Source $Destination @Arguments
+
+    $code = $LASTEXITCODE
+    if ($code -gt 7) {
+        throw "Robocopy a echoue avec le code $code."
     }
 }
 
-function Import-IisModuleOrStop {
-    Write-Step "Chargement du module WebAdministration"
+function Stop-BuildProcesses {
+    Write-Host "Arret des serveurs de build dotnet/Roslyn si presents."
+
+    Get-Process VBCSCompiler -ErrorAction SilentlyContinue | Stop-Process -Force
+    Get-Process MSBuild -ErrorAction SilentlyContinue | Stop-Process -Force
 
     try {
-        Import-Module WebAdministration -ErrorAction Stop
+        & dotnet build-server shutdown | Out-Host
     }
     catch {
-        throw "Module WebAdministration indisponible : $($_.Exception.Message)"
-    }
-
-    if (-not (Get-Command Get-Website -ErrorAction SilentlyContinue)) {
-        throw "Get-Website indisponible."
+        Write-Host "Impossible d'arreter dotnet build-server, poursuite du script."
     }
 }
 
-function Ensure-HostingBundle {
-    Write-Step "Verification ASP.NET Core Hosting Bundle"
+function Stop-IisApp {
+    Import-Module WebAdministration
 
-    $module = Get-WebGlobalModule | Where-Object { $_.Name -eq "AspNetCoreModuleV2" }
-    if ($module) {
-        Write-Host "AspNetCoreModuleV2 OK." -ForegroundColor Green
-        return
+    $site = Get-Website -Name $SiteName -ErrorAction SilentlyContinue
+    if ($null -ne $site -and $site.State -ne "Stopped") {
+        Stop-Website -Name $SiteName
     }
 
-    if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
-        throw "Hosting Bundle absent et winget indisponible. Installer manuellement le Hosting Bundle ASP.NET Core."
+    $appPool = Get-Item "IIS:\AppPools\$AppPoolName" -ErrorAction SilentlyContinue
+    if ($null -ne $appPool -and $appPool.State -ne "Stopped") {
+        Stop-WebAppPool -Name $AppPoolName
     }
 
-    winget install --id Microsoft.DotNet.HostingBundle.8 -e --accept-package-agreements --accept-source-agreements
-    if ($LASTEXITCODE -ne 0) {
-        throw "Installation du Hosting Bundle .NET 8 echouee."
+    Start-Sleep -Seconds 3
+
+    $workerProcesses = Get-CimInstance Win32_Process -Filter "name = 'w3wp.exe'" -ErrorAction SilentlyContinue |
+        Where-Object { $_.CommandLine -like "*$AppPoolName*" }
+
+    foreach ($workerProcess in $workerProcesses) {
+        Write-Host "Arret du worker IIS restant PID=$($workerProcess.ProcessId)"
+        Stop-Process -Id $workerProcess.ProcessId -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Start-IisApp {
+    Import-Module WebAdministration
+
+    $appPool = Get-Item "IIS:\AppPools\$AppPoolName" -ErrorAction SilentlyContinue
+    if ($null -eq $appPool) {
+        throw "AppPool introuvable : $AppPoolName"
     }
 
-    & "$env:SystemRoot\System32\iisreset.exe" /restart | Out-Host
+    $site = Get-Website -Name $SiteName -ErrorAction SilentlyContinue
+    if ($null -eq $site) {
+        throw "Site IIS introuvable : $SiteName"
+    }
+
+    if ($appPool.State -ne "Started") {
+        Start-WebAppPool -Name $AppPoolName
+    }
+
+    if ($site.State -ne "Started") {
+        Start-Website -Name $SiteName
+    }
+}
+
+function Ensure-Directory {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string] $Path
+    )
+
+    if (-not (Test-Path $Path)) {
+        New-Item -ItemType Directory -Force -Path $Path | Out-Null
+    }
 }
 
 function Set-WebConfigEnvironmentVariable {
     param(
-        [xml]$Document,
-        [System.Xml.XmlElement]$EnvironmentVariablesNode,
-        [string]$Name,
-        [string]$Value
+        [Parameter(Mandatory = $true)]
+        [xml] $WebConfig,
+
+        [Parameter(Mandatory = $true)]
+        [System.Xml.XmlElement] $AspNetCoreNode,
+
+        [Parameter(Mandatory = $true)]
+        [string] $Name,
+
+        [Parameter(Mandatory = $true)]
+        [string] $Value
     )
 
-    $existing = $EnvironmentVariablesNode.SelectSingleNode("environmentVariable[@name='$Name']")
-    if ($existing) {
-        $existing.SetAttribute("value", $Value)
+    $environmentVariablesNode = $AspNetCoreNode.environmentVariables
+
+    if ($null -eq $environmentVariablesNode) {
+        $environmentVariablesNode = $WebConfig.CreateElement("environmentVariables")
+        [void] $AspNetCoreNode.AppendChild($environmentVariablesNode)
+    }
+
+    $existingNode = $environmentVariablesNode.environmentVariable |
+        Where-Object { $_.name -eq $Name } |
+        Select-Object -First 1
+
+    if ($null -eq $existingNode) {
+        $existingNode = $WebConfig.CreateElement("environmentVariable")
+
+        $nameAttribute = $WebConfig.CreateAttribute("name")
+        $nameAttribute.Value = $Name
+        [void] $existingNode.Attributes.Append($nameAttribute)
+
+        $valueAttribute = $WebConfig.CreateAttribute("value")
+        $valueAttribute.Value = $Value
+        [void] $existingNode.Attributes.Append($valueAttribute)
+
+        [void] $environmentVariablesNode.AppendChild($existingNode)
     }
     else {
-        $newNode = $Document.CreateElement("environmentVariable")
-        $newNode.SetAttribute("name", $Name)
-        $newNode.SetAttribute("value", $Value)
-        $EnvironmentVariablesNode.AppendChild($newNode) | Out-Null
+        $existingNode.value = $Value
     }
 }
 
-function Ensure-WebConfigEnvironment {
-    param([string]$WebConfigPath)
+function Configure-WebConfig {
+    $webConfigPath = Join-Path $DeployDir "web.config"
 
-    Write-Step "Configuration web.config"
-
-    Assert-PathExists $WebConfigPath "web.config introuvable"
-
-    [xml]$webConfig = Get-Content $WebConfigPath
-    $systemWebServer = $webConfig.configuration.'system.webServer'
-    if (-not $systemWebServer -and $webConfig.configuration.location) {
-        $systemWebServer = $webConfig.configuration.location.'system.webServer'
-    }
-    if (-not $systemWebServer) {
-        throw "web.config invalide : section system.webServer introuvable."
+    if (-not (Test-Path $webConfigPath)) {
+        throw "web.config introuvable : $webConfigPath"
     }
 
-    $aspNetCoreNode = $systemWebServer.aspNetCore
-    if (-not $aspNetCoreNode) {
-        throw "web.config invalide : noeud aspNetCore introuvable."
+    [xml] $webConfig = Get-Content $webConfigPath -Raw
+    $aspNetCoreNode = $webConfig.configuration.'system.webServer'.aspNetCore
+
+    if ($null -eq $aspNetCoreNode) {
+        throw "Noeud aspNetCore introuvable dans web.config."
     }
 
-    $environmentVariables = $aspNetCoreNode.environmentVariables
-    if (-not $environmentVariables) {
-        $environmentVariables = $webConfig.CreateElement("environmentVariables")
-        $aspNetCoreNode.AppendChild($environmentVariables) | Out-Null
-    }
+    Set-WebConfigEnvironmentVariable `
+        -WebConfig $webConfig `
+        -AspNetCoreNode $aspNetCoreNode `
+        -Name "ASPNETCORE_ENVIRONMENT" `
+        -Value $AspNetEnvironment
 
-    Set-WebConfigEnvironmentVariable -Document $webConfig -EnvironmentVariablesNode $environmentVariables -Name "ASPNETCORE_ENVIRONMENT" -Value $AspNetCoreEnvironment
-    Set-WebConfigEnvironmentVariable -Document $webConfig -EnvironmentVariablesNode $environmentVariables -Name "ExpeditionApi__BaseUrl" -Value $ApiBaseUrl
+    Set-WebConfigEnvironmentVariable `
+        -WebConfig $webConfig `
+        -AspNetCoreNode $aspNetCoreNode `
+        -Name "ExpeditionApi__BaseUrl" `
+        -Value $ApiBaseUrl
 
-    $webConfig.Save($WebConfigPath)
+    $webConfig.Save($webConfigPath)
 
-    Write-Host "ASPNETCORE_ENVIRONMENT = $AspNetCoreEnvironment"
+    Write-Host "ASPNETCORE_ENVIRONMENT = $AspNetEnvironment"
     Write-Host "ExpeditionApi__BaseUrl = $ApiBaseUrl"
 }
 
-function Publish-Application {
-    Write-Step "Mise a jour Git et publication Release"
+function Grant-AppPoolRights {
+    $identity = "IIS AppPool\$AppPoolName"
 
-    Assert-PathExists $SourcePath "Dossier source introuvable"
-    Set-Location $SourcePath
+    $directories = @(
+        (Join-Path $DeployDir "data"),
+        (Join-Path $DeployDir "logs"),
+        (Join-Path $DeployDir "scripts")
+    )
 
-    git status
-    git pull
-
-    dotnet restore $ProjectPath
-    if ($LASTEXITCODE -ne 0) {
-        throw "dotnet restore a echoue."
-    }
-
-    dotnet build $ProjectPath -c Release --no-restore
-    if ($LASTEXITCODE -ne 0) {
-        throw "dotnet build a echoue."
-    }
-
-    Remove-Item $PublishPath -Recurse -Force -ErrorAction SilentlyContinue
-    dotnet publish $ProjectPath -c Release -o $PublishPath --no-build
-    if ($LASTEXITCODE -ne 0) {
-        throw "dotnet publish a echoue."
+    foreach ($directory in $directories) {
+        Ensure-Directory -Path $directory
+        & icacls $directory /grant "${identity}:(OI)(CI)(M)" /T | Out-Host
     }
 }
 
-function Deploy-PublishedFiles {
-    Write-Step "Copie nouvelle version"
+function Ensure-HttpBinding {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string] $HostHeader
+    )
 
-    robocopy $PublishPath $DeployPath /MIR /XD data logs scripts /XF *.log
-    if ($LASTEXITCODE -gt 7) {
-        throw "Deploiement robocopy echoue avec le code $LASTEXITCODE."
+    Import-Module WebAdministration
+
+    $bindingInformation = "*:80:$HostHeader"
+    $existingBinding = Get-WebBinding -Name $SiteName -Protocol "http" -ErrorAction SilentlyContinue |
+        Where-Object { $_.bindingInformation -eq $bindingInformation } |
+        Select-Object -First 1
+
+    if ($null -eq $existingBinding) {
+        New-WebBinding -Name $SiteName -Protocol "http" -IPAddress "*" -Port 80 -HostHeader $HostHeader
+        Write-Host "Binding ajoute sur $SiteName : $bindingInformation"
     }
-}
-
-function Ensure-ScheduledLockScript {
-    Write-Step "Copie du script de verrouillage planifie"
-
-    $sourceScript = Join-Path $SourcePath "scriptsdeploy\run-verrouillage.ps1"
-    $targetDir = Join-Path $DeployPath "scripts"
-    $targetScript = Join-Path $targetDir "run-verrouillage.ps1"
-
-    Assert-PathExists $sourceScript "Script de verrouillage source introuvable"
-
-    New-Item -ItemType Directory -Path $targetDir -Force | Out-Null
-    Copy-Item -Path $sourceScript -Destination $targetScript -Force
-
-    Write-Host "Script verrouillage deploye : $targetScript" -ForegroundColor Green
-}
-
-function Grant-AppPoolPermissions {
-    Write-Step "Droits AppPool sur data, logs et scripts"
-
-    $dataPath = Join-Path $DeployPath "data"
-    $logsPath = Join-Path $DeployPath "logs"
-    $scriptsPath = Join-Path $DeployPath "scripts"
-
-    New-Item -ItemType Directory -Path $dataPath -Force | Out-Null
-    New-Item -ItemType Directory -Path $logsPath -Force | Out-Null
-    New-Item -ItemType Directory -Path $scriptsPath -Force | Out-Null
-
-    $appPoolIdentity = "IIS AppPool\${AppPoolName}"
-    icacls $dataPath /grant "${appPoolIdentity}:(OI)(CI)M" /T | Out-Host
-    icacls $logsPath /grant "${appPoolIdentity}:(OI)(CI)M" /T | Out-Host
-    icacls $scriptsPath /grant "${appPoolIdentity}:(OI)(CI)RX" /T | Out-Host
+    else {
+        Write-Host "Binding deja present sur $SiteName : $bindingInformation"
+    }
 }
 
 function Ensure-FirewallRule {
-    Write-Step "Configuration pare-feu Windows port 80"
+    $existingRule = Get-NetFirewallRule -DisplayName $FirewallRuleName -ErrorAction SilentlyContinue
 
-    $ruleName = "ServeWebEXPE HTTP 80"
-    $existing = Get-NetFirewallRule -DisplayName $ruleName -ErrorAction SilentlyContinue
+    if ($null -eq $existingRule) {
+        New-NetFirewallRule `
+            -DisplayName $FirewallRuleName `
+            -Direction Inbound `
+            -Action Allow `
+            -Protocol TCP `
+            -LocalPort 80 | Out-Null
 
-    if (-not $existing) {
-        New-NetFirewallRule -DisplayName $ruleName -Direction Inbound -Protocol TCP -LocalPort $WebPort -Action Allow | Out-Host
-        Write-Host "Règle pare-feu ajoutée : $ruleName" -ForegroundColor Green
+        Write-Host "Regle pare-feu ajoutee : $FirewallRuleName"
     }
     else {
-        Write-Host "Règle pare-feu déjà présente : $ruleName" -ForegroundColor Yellow
+        Write-Host "Regle pare-feu deja presente : $FirewallRuleName"
     }
 }
 
-function Ensure-WebBinding {
-    param(
-        [string]$HostHeader
-    )
+function Remove-Port5100Bindings {
+    Import-Module WebAdministration
 
-    $expected = "*:${WebPort}:${HostHeader}"
+    $bindings5100 = Get-WebBinding -Name $SiteName -ErrorAction SilentlyContinue |
+        Where-Object { $_.bindingInformation -like "*:5100:*" }
 
-    Get-Website | ForEach-Object {
-        $currentSiteName = $_.Name
-        $wrongBinding = Get-WebBinding -Name $currentSiteName |
-            Where-Object {
-                $_.protocol -eq "http" `
-                -and $_.bindingInformation -eq $expected `
-                -and $currentSiteName -ne $SiteName
-            }
-
-        if ($wrongBinding) {
-            Remove-WebBinding -Name $currentSiteName -Protocol "http" -Port $WebPort -HostHeader $HostHeader
-            Write-Host "Binding supprimé du mauvais site $currentSiteName : $expected" -ForegroundColor Yellow
-        }
-    }
-
-    $exists = Get-WebBinding -Name $SiteName -ErrorAction SilentlyContinue |
-        Where-Object {
-            $_.protocol -eq "http" `
-            -and $_.bindingInformation -eq $expected
-        }
-
-    if (-not $exists) {
-        New-WebBinding -Name $SiteName -Protocol "http" -Port $WebPort -IPAddress "*" -HostHeader $HostHeader
-        Write-Host "Binding ajouté : $expected" -ForegroundColor Green
-    }
-    else {
-        Write-Host "Binding déjà présent : $expected" -ForegroundColor Yellow
-    }
-}
-
-function Ensure-IisSite {
-    Write-Step "Configuration AppPool et site IIS final"
-
-    if (-not (Test-Path "IIS:\AppPools\$AppPoolName")) {
-        New-WebAppPool -Name $AppPoolName | Out-Null
-    }
-
-    Set-ItemProperty "IIS:\AppPools\$AppPoolName" -Name managedRuntimeVersion -Value ""
-    Set-ItemProperty "IIS:\AppPools\$AppPoolName" -Name startMode -Value "AlwaysRunning"
-
-    $site = Get-Website -Name $SiteName -ErrorAction SilentlyContinue
-    if (-not $site) {
-        New-Website `
+    foreach ($binding in $bindings5100) {
+        Remove-WebBinding `
             -Name $SiteName `
-            -PhysicalPath $DeployPath `
-            -Port $WebPort `
-            -IPAddress "*" `
-            -HostHeader $ExpeditionDns `
-            -ApplicationPool $AppPoolName | Out-Null
+            -Protocol $binding.protocol `
+            -BindingInformation $binding.bindingInformation
+
+        Write-Host "Binding port 5100 supprime : $($binding.bindingInformation)"
+    }
+
+    $oldFirewallRules = Get-NetFirewallRule -DisplayName "ServeWebEXPE HTTP 5100" -ErrorAction SilentlyContinue
+    foreach ($rule in $oldFirewallRules) {
+        Remove-NetFirewallRule -Name $rule.Name
+        Write-Host "Ancienne regle pare-feu 5100 supprimee : $($rule.DisplayName)"
+    }
+}
+
+function Copy-PlannedLockScript {
+    $sourceScript = Join-Path $ProjectDir "scripts\run-verrouillage.ps1"
+    $destinationDirectory = Join-Path $DeployDir "scripts"
+    $destinationScript = Join-Path $destinationDirectory "run-verrouillage.ps1"
+
+    Ensure-Directory -Path $destinationDirectory
+
+    if (Test-Path $sourceScript) {
+        Copy-Item -Path $sourceScript -Destination $destinationScript -Force
+        Write-Host "Script verrouillage deploye : $destinationScript"
     }
     else {
-        Set-ItemProperty "IIS:\Sites\$SiteName" -Name physicalPath -Value $DeployPath
-    }
-
-    Ensure-WebBinding -HostHeader $ExpeditionDns
-    Ensure-WebBinding -HostHeader $AdministrationDns
-    Ensure-WebBinding -HostHeader $LocalLockHost
-
-    $obsoleteBindings = Get-WebBinding -Name $SiteName -ErrorAction SilentlyContinue |
-        Where-Object { $_.protocol -eq "http" -and $_.bindingInformation -like "*:5100:*" }
-
-    foreach ($binding in $obsoleteBindings) {
-        $parts = $binding.bindingInformation.Split(":")
-        $hostHeader = if ($parts.Count -ge 3) { $parts[2] } else { "" }
-        Remove-WebBinding -Name $SiteName -Protocol "http" -Port 5100 -HostHeader $hostHeader
-        Write-Host "Binding obsolète supprimé : $($binding.bindingInformation)" -ForegroundColor Yellow
-    }
-
-    $defaultSite = Get-Website -Name "Default Web Site" -ErrorAction SilentlyContinue
-    if ($defaultSite -and $defaultSite.State -eq "Started") {
-        Stop-Website -Name "Default Web Site"
-        Write-Host "Default Web Site arrêté." -ForegroundColor Yellow
+        Write-Host "Script source introuvable, conservation du script deja deploye si present : $sourceScript"
     }
 }
 
-function Restart-IisSite {
-    Write-Step "Redemarrage IIS"
-
-    $site = Get-Website -Name $SiteName -ErrorAction SilentlyContinue
-    if (-not $site) {
-        throw "Site IIS introuvable : $SiteName"
-    }
-
-    $appPoolState = (Get-WebAppPoolState -Name $AppPoolName -ErrorAction Stop).Value
-
-    if ($site.State -eq "Started") {
-        Stop-Website -Name $SiteName
-    }
-
-    if ($appPoolState -eq "Started") {
-        Stop-WebAppPool -Name $AppPoolName
-    }
-
-    Start-Sleep -Seconds 2
-
-    if ((Get-WebAppPoolState -Name $AppPoolName).Value -ne "Started") {
-        Start-WebAppPool -Name $AppPoolName
-    }
-
-    if ((Get-Website -Name $SiteName).State -ne "Started") {
-        Start-Website -Name $SiteName
-    }
-
-    Start-Sleep -Seconds 5
-}
-
-function Invoke-HttpTest {
+function Test-HttpEndpoint {
     param(
-        [string]$Url,
-        [int[]]$ExpectedStatusCodes
+        [Parameter(Mandatory = $true)]
+        [string] $Url
     )
-
-    Write-Host ""
-    Write-Host "Test HTTP : $Url" -ForegroundColor Yellow
 
     try {
-        $response = Invoke-WebRequest -Uri $Url -UseBasicParsing -MaximumRedirection 0 -TimeoutSec 20 -ErrorAction Stop
-        $code = [int]$response.StatusCode
+        $response = Invoke-WebRequest `
+            -Uri $Url `
+            -UseBasicParsing `
+            -MaximumRedirection 0 `
+            -ErrorAction Stop
+
+        $statusCode = [int] $response.StatusCode
         $location = $response.Headers["Location"]
 
-        if ($ExpectedStatusCodes -contains $code) {
-            Write-Host "[OK] Code=$code Location=$location" -ForegroundColor Green
+        if ($statusCode -ge 200 -and $statusCode -lt 400) {
+            Write-Host "[OK] Code=$statusCode Location=$location"
         }
         else {
-            throw "Code HTTP inattendu : $code. Attendu : $($ExpectedStatusCodes -join ', ')"
+            Write-Host "[KO] Code=$statusCode Location=$location"
         }
     }
     catch {
-        if ($_.Exception.Response) {
-            $code = [int]$_.Exception.Response.StatusCode
+        if ($null -ne $_.Exception.Response) {
+            $statusCode = [int] $_.Exception.Response.StatusCode
             $location = $_.Exception.Response.Headers["Location"]
 
-            if ($ExpectedStatusCodes -contains $code) {
-                Write-Host "[OK] Code=$code Location=$location" -ForegroundColor Green
-                return
+            if ($statusCode -ge 200 -and $statusCode -lt 400) {
+                Write-Host "[OK] Code=$statusCode Location=$location"
             }
-
-            throw "Code HTTP inattendu : $code. Location=$location. Attendu : $($ExpectedStatusCodes -join ', ')"
+            else {
+                Write-Host "[KO] Code=$statusCode Location=$location"
+            }
         }
-
-        throw
+        else {
+            Write-Host "[KO] $($_.Exception.Message)"
+        }
     }
 }
 
-function Test-Deployment {
-    Write-Step "Tests de verification"
+Write-Section "Mise a jour SERVWEB IIS"
+Write-Host "DNS Expedition final      : $ExpeditionUrl"
+Write-Host "DNS Administration final  : $AdministrationUrl"
+Write-Host "Endpoint local verrouillage: $LocalVerrouillageUrl"
+Write-Host "API centrale             : $ApiBaseUrl"
+Write-Host "Depot Git                : $RepoRoot"
+Write-Host "Dossier deploy           : $DeployDir"
+Write-Host "Environnement ASP        : $AspNetEnvironment"
 
-    Get-Website -Name $SiteName | Format-Table -AutoSize
-    Get-WebAppPoolState -Name $AppPoolName | Format-Table -AutoSize
+Write-Section "Chargement du module WebAdministration"
+Import-Module WebAdministration
 
-    Write-Host ""
-    Write-Host "--- Bindings IIS ---" -ForegroundColor Yellow
-    Get-Website | ForEach-Object {
-        $currentSiteName = $_.Name
-        Get-WebBinding -Name $currentSiteName | Select-Object `
-            @{Name="Site";Expression={$currentSiteName}},
-            protocol,
-            bindingInformation
-    } | Format-Table -AutoSize
+Write-Section "Mise a jour Git et publication Release"
+Set-Location $RepoRoot
 
-    Invoke-HttpTest -Url $ApiHealthUrl -ExpectedStatusCodes @(200)
-    Invoke-HttpTest -Url "http://${ExpeditionDns}" -ExpectedStatusCodes @(200)
-    Invoke-HttpTest -Url "http://${AdministrationDns}" -ExpectedStatusCodes @(200)
-    Invoke-HttpTest -Url "http://${AdministrationDns}/expedition" -ExpectedStatusCodes @(302)
-    Invoke-HttpTest -Url "http://${ExpeditionDns}/administration" -ExpectedStatusCodes @(302)
-    Invoke-HttpTest -Url "http://${LocalLockHost}/preparations/status" -ExpectedStatusCodes @(200)
+git status
+$gitChanges = git status --porcelain
+
+if (-not [string]::IsNullOrWhiteSpace($gitChanges)) {
+    throw "Le depot contient des modifications locales. Commit, stash ou reset avant de deployer."
 }
 
-Write-Step "Configuration IIS initiale SERVWEB"
-Write-Host "DNS Expedition      : http://${ExpeditionDns}"
-Write-Host "DNS Administration  : http://${AdministrationDns}"
-Write-Host "Verrouillage local  : http://${LocalLockHost}/verrouillage/executer"
-Write-Host "API centrale        : $ApiBaseUrl"
-Write-Host "Depot Git           : $SourcePath"
-Write-Host "Dossier deploy      : $DeployPath"
-Write-Host "Environnement ASP   : $AspNetCoreEnvironment"
+git pull --ff-only
 
-Enable-IisFeatures
-Import-IisModuleOrStop
-Ensure-HostingBundle
+Stop-BuildProcesses
 
-New-Item -ItemType Directory -Path $PublishPath -Force | Out-Null
-New-Item -ItemType Directory -Path $DeployPath -Force | Out-Null
-New-Item -ItemType Directory -Path $BackupRoot -Force | Out-Null
-New-Item -ItemType Directory -Path (Join-Path $DeployPath "data") -Force | Out-Null
-New-Item -ItemType Directory -Path (Join-Path $DeployPath "logs") -Force | Out-Null
-New-Item -ItemType Directory -Path (Join-Path $DeployPath "scripts") -Force | Out-Null
+Write-Host "Nettoyage bin/obj pour eviter les restes de build."
+Remove-Item -Recurse -Force (Join-Path $ProjectDir "bin") -ErrorAction SilentlyContinue
+Remove-Item -Recurse -Force (Join-Path $ProjectDir "obj") -ErrorAction SilentlyContinue
 
-[Environment]::SetEnvironmentVariable("ExpeditionApi__BaseUrl", $ApiBaseUrl, "Machine")
-$env:ExpeditionApi__BaseUrl = $ApiBaseUrl
+Ensure-Directory -Path $PublishDir
+Remove-Item -Recurse -Force $PublishDir -ErrorAction SilentlyContinue
+Ensure-Directory -Path $PublishDir
 
-Publish-Application
-Deploy-PublishedFiles
-Ensure-ScheduledLockScript
-Ensure-WebConfigEnvironment -WebConfigPath (Join-Path $DeployPath "web.config")
-Ensure-IisSite
-Grant-AppPoolPermissions
-Ensure-FirewallRule
-Restart-IisSite
-Test-Deployment
+$buildArguments = @(
+    "build",
+    $ProjectPath,
+    "-c",
+    "Release",
+    "-m:1",
+    "/nr:false",
+    "-p:RunAnalyzers=false",
+    "-p:RunAnalyzersDuringBuild=false",
+    "-p:RunAnalyzersDuringLiveAnalysis=false",
+    "-p:UseSharedCompilation=false"
+)
 
-Write-Step "Configuration terminee"
-Write-Host "URL Expedition finale      : http://${ExpeditionDns}" -ForegroundColor Green
-Write-Host "URL Administration finale  : http://${AdministrationDns}" -ForegroundColor Green
-Write-Host "Endpoint verrouillage local: http://${LocalLockHost}/verrouillage/executer" -ForegroundColor Green
-Write-Host "API centrale DNS           : $ApiBaseUrl" -ForegroundColor Green
+Invoke-ExternalCommand `
+    -FilePath "dotnet" `
+    -Arguments $buildArguments `
+    -ErrorMessage "dotnet build a echoue."
+
+$publishArguments = @(
+    "publish",
+    $ProjectPath,
+    "-c",
+    "Release",
+    "-o",
+    $PublishDir,
+    "-m:1",
+    "/nr:false",
+    "-p:RunAnalyzers=false",
+    "-p:RunAnalyzersDuringBuild=false",
+    "-p:RunAnalyzersDuringLiveAnalysis=false",
+    "-p:UseSharedCompilation=false"
+)
+
+Invoke-ExternalCommand `
+    -FilePath "dotnet" `
+    -Arguments $publishArguments `
+    -ErrorMessage "dotnet publish a echoue."
+
+Write-Section "Sauvegarde version actuelle"
+Ensure-Directory -Path $DeployDir
+Ensure-Directory -Path $BackupRoot
+
+$backupStamp = Get-Date -Format "yyyyMMdd-HHmmss"
+$backupDir = Join-Path $BackupRoot $backupStamp
+
+Invoke-RobocopyChecked `
+    -Source $DeployDir `
+    -Destination $backupDir `
+    -Arguments @("/S", "/E", "/DCOPY:DA", "/COPY:DAT", "/PURGE", "/MIR", "/R:3", "/W:5", "/XD", "data", "logs", "/XF", "*.log")
+
+Write-Section "Arret IIS avant copie"
+Stop-IisApp
+
+try {
+    Write-Section "Copie nouvelle version"
+
+    Invoke-RobocopyChecked `
+        -Source $PublishDir `
+        -Destination $DeployDir `
+        -Arguments @("/S", "/E", "/DCOPY:DA", "/COPY:DAT", "/PURGE", "/MIR", "/R:3", "/W:5", "/XD", "data", "logs", "scripts", "/XF", "*.log")
+
+    Write-Section "Copie du script de verrouillage planifie"
+    Copy-PlannedLockScript
+
+    Write-Section "Configuration web.config"
+    Configure-WebConfig
+
+    Write-Section "Droits AppPool sur data et logs"
+    Grant-AppPoolRights
+
+    Write-Section "Configuration bindings IIS finaux"
+    Ensure-HttpBinding -HostHeader "expedition.sli.local"
+    Ensure-HttpBinding -HostHeader "admin.sli.local"
+    Ensure-HttpBinding -HostHeader "localhost"
+    Ensure-FirewallRule
+
+    Write-Section "Suppression des restes du port 5100"
+    Remove-Port5100Bindings
+}
+catch {
+    Write-Section "Erreur pendant la copie/configuration"
+    Write-Host $_.Exception.Message
+    Write-Host "Tentative de redemarrage IIS avec la version disponible."
+    Start-IisApp
+    throw
+}
+
+Write-Section "Redemarrage IIS"
+Start-IisApp
+
+Write-Section "Tests de verification"
+Get-Website -Name $SiteName
+Get-WebAppPoolState -Name $AppPoolName
+
+Write-Host ""
+Write-Host "--- Bindings IIS ---"
+Get-WebBinding | Select-Object @{Name = "Site"; Expression = { $_.ItemXPath -replace ".*name='([^']+)'.*", '$1' } }, protocol, bindingInformation | Format-Table -AutoSize
+
+Write-Host ""
+Write-Host "--- Tests finaux ---"
+
+$testUrls = @(
+    "http://api.mobilesli.intra:5000/api/health",
+    "http://expedition.sli.local",
+    "http://admin.sli.local",
+    "http://admin.sli.local/expedition",
+    "http://expedition.sli.local/administration",
+    "http://localhost/preparations/status"
+)
+
+foreach ($url in $testUrls) {
+    Write-Host ""
+    Write-Host "Test HTTP : $url"
+    Test-HttpEndpoint -Url $url
+}
+
+Write-Section "Mise a jour terminee"
+Write-Host "URL Expedition finale        : $ExpeditionUrl"
+Write-Host "URL Administration finale    : $AdministrationUrl"
+Write-Host "Endpoint verrouillage local  : $LocalVerrouillageUrl"
+Write-Host "API centrale DNS             : $ApiBaseUrl"
