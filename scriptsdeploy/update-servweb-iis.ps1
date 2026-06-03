@@ -2,24 +2,18 @@ $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
 # ============================================================
-# Mise a jour SERVWEB IIS - MobileSLI Expedition Web
+# Mise a jour SERVWEB IIS depuis artefact Git
 # ============================================================
-# Objectif :
-# - Recuperer la derniere version Git.
-# - Compiler/publier en Release sur SERVWEB sans analyse Roslyn complete.
-# - Sauvegarder la version actuelle.
-# - Deployer vers IIS.
-# - Conserver data, logs et scripts.
-# - Configurer web.config, bindings et pare-feu.
-# - Verifier les URLs finales.
+# Ce script NE COMPILE PAS.
+# Il recupere le ZIP publie dans Git, le dezippe et le deploie sur IIS.
 # ============================================================
 
 $SiteName = "MobileSLI.Expedition.Web"
 $AppPoolName = "MobileSLI.Expedition.Web"
 
 $SourcePath = "C:\Sources\servewebEXPE"
-$ProjectPath = ".\src\MobileSLI.Expedition.Web\MobileSLI.Expedition.Web.csproj"
-$ProjectDirectory = ".\src\MobileSLI.Expedition.Web"
+$ArtifactRelativePath = "artifacts\servweb\MobileSLI.Expedition.Web.zip"
+$ManifestRelativePath = "artifacts\servweb\manifest.json"
 
 $PublishPath = "C:\Publish\MobileSLI.Expedition.Web"
 $DeployPath = "C:\Services\MobileSLI.Expedition.Web"
@@ -39,10 +33,7 @@ $AspNetEnvironment = "Development"
 $FirewallRuleName = "ServeWebEXPE HTTP 80"
 
 function Write-Step {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$Message
-    )
+    param([string]$Message)
 
     Write-Host ""
     Write-Host "============================================================"
@@ -52,10 +43,7 @@ function Write-Step {
 
 function Assert-PathExists {
     param(
-        [Parameter(Mandatory = $true)]
         [string]$Path,
-
-        [Parameter(Mandatory = $true)]
         [string]$Message
     )
 
@@ -65,10 +53,7 @@ function Assert-PathExists {
 }
 
 function Ensure-Directory {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$Path
-    )
+    param([string]$Path)
 
     if (-not (Test-Path $Path)) {
         New-Item -ItemType Directory -Force -Path $Path | Out-Null
@@ -77,16 +62,9 @@ function Ensure-Directory {
 
 function Invoke-RobocopyChecked {
     param(
-        [Parameter(Mandatory = $true)]
         [string]$Source,
-
-        [Parameter(Mandatory = $true)]
         [string]$Destination,
-
-        [Parameter(Mandatory = $true)]
         [string[]]$Arguments,
-
-        [Parameter(Mandatory = $true)]
         [string]$ErrorMessage
     )
 
@@ -99,18 +77,69 @@ function Invoke-RobocopyChecked {
     }
 }
 
-function Stop-BuildProcesses {
-    Write-Host "Arret des processus de build pour liberer la memoire."
+function Sync-GitRepository {
+    Write-Step "Mise a jour Git"
 
-    Get-Process VBCSCompiler -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-    Get-Process MSBuild -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    Assert-PathExists $SourcePath "Dossier source introuvable"
 
-    try {
-        dotnet build-server shutdown | Out-Host
+    Set-Location $SourcePath
+
+    git status
+
+    Write-Host "SERVWEB est un serveur de deploiement : les modifications locales sont supprimees."
+    git fetch origin
+
+    if ($LASTEXITCODE -ne 0) {
+        throw "git fetch origin a echoue."
     }
-    catch {
-        Write-Host "dotnet build-server shutdown non critique, poursuite du script."
+
+    git reset --hard origin/main
+
+    if ($LASTEXITCODE -ne 0) {
+        throw "git reset --hard origin/main a echoue."
     }
+
+    git clean -fd
+
+    if ($LASTEXITCODE -ne 0) {
+        throw "git clean -fd a echoue."
+    }
+
+    git log -1 --oneline
+}
+
+function Expand-Artifact {
+    Write-Step "Extraction artefact Git"
+
+    $artifactPath = Join-Path $SourcePath $ArtifactRelativePath
+    $manifestPath = Join-Path $SourcePath $ManifestRelativePath
+
+    Assert-PathExists $artifactPath "Artefact Git introuvable. Lance publish-servweb-artifact.ps1 en local puis push"
+    Assert-PathExists $manifestPath "Manifest artefact introuvable"
+
+    Write-Host "Artefact : $artifactPath"
+    Write-Host "Manifest : $manifestPath"
+
+    Write-Host ""
+    Write-Host "--- Manifest artefact ---"
+    Get-Content $manifestPath -Raw | Write-Host
+
+    Remove-Item -Recurse -Force $PublishPath -ErrorAction SilentlyContinue
+    New-Item -ItemType Directory -Force -Path $PublishPath | Out-Null
+
+    Expand-Archive `
+        -Path $artifactPath `
+        -DestinationPath $PublishPath `
+        -Force
+
+    Assert-PathExists (Join-Path $PublishPath "MobileSLI.Expedition.Web.dll") "DLL publiee introuvable apres extraction"
+    Assert-PathExists (Join-Path $PublishPath "web.config") "web.config publie introuvable apres extraction"
+
+    $dll = Get-Item (Join-Path $PublishPath "MobileSLI.Expedition.Web.dll")
+    Write-Host ""
+    Write-Host "Artefact extrait vers : $PublishPath"
+    Write-Host "DLL LastWriteTime     : $($dll.LastWriteTime)"
+    Write-Host "DLL Taille Mo         : $([math]::Round($dll.Length / 1MB, 2))"
 }
 
 function Stop-IisApplication {
@@ -118,29 +147,17 @@ function Stop-IisApplication {
 
     Import-Module WebAdministration
 
-    $site = Get-Website -Name $SiteName -ErrorAction SilentlyContinue
-    if ($null -ne $site) {
-        if ($site.State -ne "Stopped") {
-            Stop-Website -Name $SiteName -ErrorAction SilentlyContinue
-        }
-    }
-
-    $appPool = Get-Item "IIS:\AppPools\$AppPoolName" -ErrorAction SilentlyContinue
-    if ($null -ne $appPool) {
-        if ($appPool.State -ne "Stopped") {
-            Stop-WebAppPool -Name $AppPoolName -ErrorAction SilentlyContinue
-        }
-    }
+    Stop-Website $SiteName -ErrorAction SilentlyContinue
+    Stop-WebAppPool $AppPoolName -ErrorAction SilentlyContinue
 
     Start-Sleep -Seconds 3
 
-    $workerProcesses = Get-CimInstance Win32_Process -Filter "name = 'w3wp.exe'" -ErrorAction SilentlyContinue |
-        Where-Object { $_.CommandLine -like "*$AppPoolName*" }
-
-    foreach ($workerProcess in $workerProcesses) {
-        Write-Host "Worker IIS encore actif, arret force PID=$($workerProcess.ProcessId)"
-        Stop-Process -Id $workerProcess.ProcessId -Force -ErrorAction SilentlyContinue
-    }
+    Get-CimInstance Win32_Process -Filter "name = 'w3wp.exe'" -ErrorAction SilentlyContinue |
+        Where-Object { $_.CommandLine -like "*$AppPoolName*" } |
+        ForEach-Object {
+            Write-Host "Worker IIS encore actif, arret force PID=$($_.ProcessId)"
+            Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+        }
 }
 
 function Start-IisApplication {
@@ -159,78 +176,11 @@ function Start-IisApplication {
     }
 
     if ($appPool.State -ne "Started") {
-        Start-WebAppPool -Name $AppPoolName
+        Start-WebAppPool $AppPoolName
     }
 
     if ($site.State -ne "Started") {
-        Start-Website -Name $SiteName
-    }
-}
-
-function Publish-Application {
-    Write-Step "Mise a jour Git et publication Release"
-
-    Assert-PathExists $SourcePath "Dossier source introuvable"
-
-    Set-Location $SourcePath
-
-    git status
-
-    $gitChanges = git status --porcelain
-    if (-not [string]::IsNullOrWhiteSpace($gitChanges)) {
-        throw "Le depot contient des modifications locales. Commit, stash ou reset avant de deployer."
-    }
-
-    git pull --ff-only
-    if ($LASTEXITCODE -ne 0) {
-        throw "git pull --ff-only a echoue."
-    }
-
-    Stop-BuildProcesses
-
-    Write-Host "Nettoyage bin/obj."
-    Remove-Item -Recurse -Force (Join-Path $SourcePath "src\MobileSLI.Expedition.Web\bin") -ErrorAction SilentlyContinue
-    Remove-Item -Recurse -Force (Join-Path $SourcePath "src\MobileSLI.Expedition.Web\obj") -ErrorAction SilentlyContinue
-
-    Write-Host "Restauration NuGet."
-    dotnet restore $ProjectPath
-    if ($LASTEXITCODE -ne 0) {
-        throw "dotnet restore a echoue."
-    }
-
-    Write-Host "Build Release SERVWEB sans analyzers Roslyn complets."
-    dotnet build $ProjectPath `
-        -c Release `
-        --no-restore `
-        -m:1 `
-        /nr:false `
-        -p:RunAnalyzers=false `
-        -p:RunAnalyzersDuringBuild=false `
-        -p:RunAnalyzersDuringLiveAnalysis=false `
-        -p:UseSharedCompilation=false
-
-    if ($LASTEXITCODE -ne 0) {
-        throw "dotnet build a echoue."
-    }
-
-    Write-Host "Nettoyage dossier publish."
-    Remove-Item $PublishPath -Recurse -Force -ErrorAction SilentlyContinue
-    New-Item -ItemType Directory -Force -Path $PublishPath | Out-Null
-
-    Write-Host "Publish Release SERVWEB sans rebuild et sans analyzers."
-    dotnet publish $ProjectPath `
-        -c Release `
-        -o $PublishPath `
-        --no-build `
-        -m:1 `
-        /nr:false `
-        -p:RunAnalyzers=false `
-        -p:RunAnalyzersDuringBuild=false `
-        -p:RunAnalyzersDuringLiveAnalysis=false `
-        -p:UseSharedCompilation=false
-
-    if ($LASTEXITCODE -ne 0) {
-        throw "dotnet publish a echoue."
+        Start-Website $SiteName
     }
 }
 
@@ -250,10 +200,12 @@ function Backup-CurrentDeployment {
         -Destination $backupPath `
         -Arguments @("/MIR", "/R:3", "/W:5", "/XD", "data", "logs", "/XF", "*.log") `
         -ErrorMessage "Sauvegarde robocopy echouee."
+
+    Write-Host "Backup cree : $backupPath"
 }
 
 function Deploy-PublishedFiles {
-    Write-Step "Copie nouvelle version"
+    Write-Step "Copie artefact vers IIS"
 
     Assert-PathExists $PublishPath "Dossier publish introuvable"
     Ensure-Directory $DeployPath
@@ -285,16 +237,9 @@ function Ensure-ScheduledLockScript {
 
 function Set-WebConfigEnvironmentVariable {
     param(
-        [Parameter(Mandatory = $true)]
         [xml]$WebConfig,
-
-        [Parameter(Mandatory = $true)]
         [System.Xml.XmlElement]$AspNetCoreNode,
-
-        [Parameter(Mandatory = $true)]
         [string]$Name,
-
-        [Parameter(Mandatory = $true)]
         [string]$Value
     )
 
@@ -328,10 +273,7 @@ function Set-WebConfigEnvironmentVariable {
 }
 
 function Ensure-WebConfigEnvironment {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$WebConfigPath
-    )
+    param([string]$WebConfigPath)
 
     Write-Step "Configuration web.config"
 
@@ -341,12 +283,7 @@ function Ensure-WebConfigEnvironment {
 
     [xml]$webConfig = Get-Content $WebConfigPath -Raw
 
-    $systemWebServerNode = $webConfig.configuration.'system.webServer'
-    if ($null -eq $systemWebServerNode) {
-        throw "Noeud system.webServer introuvable dans web.config."
-    }
-
-    $aspNetCoreNode = $systemWebServerNode.aspNetCore
+    $aspNetCoreNode = $webConfig.configuration.'system.webServer'.aspNetCore
     if ($null -eq $aspNetCoreNode) {
         throw "Noeud aspNetCore introuvable dans web.config."
     }
@@ -370,7 +307,7 @@ function Ensure-WebConfigEnvironment {
 }
 
 function Grant-AppPoolPermissions {
-    Write-Step "Droits AppPool sur data et logs"
+    Write-Step "Droits AppPool sur data, logs et scripts"
 
     $identity = "IIS AppPool\$AppPoolName"
 
@@ -388,10 +325,7 @@ function Grant-AppPoolPermissions {
 
 function Ensure-WebBinding {
     param(
-        [Parameter(Mandatory = $true)]
         [string]$HostHeader,
-
-        [Parameter(Mandatory = $true)]
         [int]$Port
     )
 
@@ -420,10 +354,7 @@ function Ensure-WebBinding {
 
 function Ensure-FirewallRule {
     param(
-        [Parameter(Mandatory = $true)]
         [string]$RuleName,
-
-        [Parameter(Mandatory = $true)]
         [int]$Port
     )
 
@@ -447,6 +378,7 @@ function Ensure-FirewallRule {
 
     if ($ruleMissing) {
         netsh advfirewall firewall add rule name="$RuleName" dir=in action=allow protocol=TCP localport=$Port | Out-Host
+
         if ($LASTEXITCODE -ne 0) {
             throw "Impossible d'ajouter la regle pare-feu : $RuleName"
         }
@@ -516,17 +448,14 @@ function Remove-ObsoletePort5100 {
 }
 
 function Test-HttpEndpoint {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$Url
-    )
+    param([string]$Url)
 
     try {
         $response = Invoke-WebRequest `
             -Uri $Url `
             -UseBasicParsing `
             -MaximumRedirection 0 `
-            -ErrorAction Stop
+            -ErrorAction SilentlyContinue
 
         $statusCode = [int]$response.StatusCode
         $location = $response.Headers["Location"]
@@ -590,36 +519,26 @@ function Run-FinalChecks {
     }
 }
 
-# ============================================================
-# Execution
-# ============================================================
-
-Write-Step "Mise a jour SERVWEB IIS"
-Write-Host "DNS Expedition final      : $ExpeditionUrl"
-Write-Host "DNS Administration final  : $AdministrationUrl"
+Write-Step "Mise a jour SERVWEB IIS depuis artefact Git"
+Write-Host "DNS Expedition final       : $ExpeditionUrl"
+Write-Host "DNS Administration final   : $AdministrationUrl"
 Write-Host "Endpoint local verrouillage: $LocalLockUrl"
-Write-Host "API centrale             : $ApiBaseUrl"
-Write-Host "Depot Git                : $SourcePath"
-Write-Host "Dossier deploy           : $DeployPath"
-Write-Host "Environnement ASP        : $AspNetEnvironment"
+Write-Host "API centrale              : $ApiBaseUrl"
+Write-Host "Depot Git                 : $SourcePath"
+Write-Host "Artefact Git              : $ArtifactRelativePath"
+Write-Host "Dossier publish           : $PublishPath"
+Write-Host "Dossier deploy            : $DeployPath"
+Write-Host "Environnement ASP         : $AspNetEnvironment"
 
 Write-Step "Chargement du module WebAdministration"
 Import-Module WebAdministration
 
-Set-Location $SourcePath
-
 $env:ASPNETCORE_ENVIRONMENT = $AspNetEnvironment
 $env:ExpeditionApi__BaseUrl = $ApiBaseUrl
 
-Publish-Application
-
-$site = Get-Website -Name $SiteName -ErrorAction SilentlyContinue
-if ($site -and $site.State -eq "Started") {
-    Write-Host "Site en cours d'execution avant sauvegarde : $SiteName"
-}
-
+Sync-GitRepository
+Expand-Artifact
 Backup-CurrentDeployment
-
 Stop-IisApplication
 
 try {
@@ -642,7 +561,7 @@ Start-IisApplication
 Run-FinalChecks
 
 Write-Step "Mise a jour terminee"
-Write-Host "URL Expedition finale        : $ExpeditionUrl"
-Write-Host "URL Administration finale    : $AdministrationUrl"
-Write-Host "Endpoint verrouillage local  : $LocalLockUrl"
-Write-Host "API centrale DNS             : $ApiBaseUrl"
+Write-Host "URL Expedition finale       : $ExpeditionUrl"
+Write-Host "URL Administration finale   : $AdministrationUrl"
+Write-Host "Endpoint verrouillage local : $LocalLockUrl"
+Write-Host "API centrale DNS            : $ApiBaseUrl"
