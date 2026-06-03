@@ -4,16 +4,9 @@ Set-StrictMode -Version Latest
 # ============================================================
 # Mise a jour SERVWEB IIS depuis artefact Git
 # ============================================================
-# Role du script :
-# - ne compile jamais sur SERVWEB ;
-# - recupere l'artefact ZIP versionne dans Git ;
-# - extrait l'artefact dans C:\Publish ;
-# - sauvegarde l'ancien deploiement ;
-# - met l'application hors ligne via app_offline.htm ;
-# - copie vers IIS avec Robocopy ;
-# - garantit un web.config IIS ASP.NET Core valide ;
-# - redemarre l'AppPool ;
-# - execute les tests HTTP finaux.
+# Ce script ne compile pas sur SERVWEB.
+# Il deploie uniquement l'artefact publie dans Git :
+# artifacts\servweb\MobileSLI.Expedition.Web.zip
 # ============================================================
 
 $SiteName = "MobileSLI.Expedition.Web"
@@ -37,12 +30,10 @@ $AdministrationUrl = "http://admin.sli.local"
 $LocalLockUrl = "http://localhost/verrouillage/executer"
 $ApiBaseUrl = "http://api.mobilesli.intra:5000/"
 $AspNetEnvironment = "Development"
-
 $FirewallRuleName = "ServeWebEXPE HTTP 80"
 
 function Write-Step {
     param([Parameter(Mandatory = $true)][string]$Message)
-
     Write-Host ""
     Write-Host "============================================================"
     Write-Host $Message
@@ -54,7 +45,6 @@ function Assert-PathExists {
         [Parameter(Mandatory = $true)][string]$Path,
         [Parameter(Mandatory = $true)][string]$Message
     )
-
     if (-not (Test-Path $Path)) {
         throw "$Message : $Path"
     }
@@ -62,7 +52,6 @@ function Assert-PathExists {
 
 function Ensure-Directory {
     param([Parameter(Mandatory = $true)][string]$Path)
-
     if (-not (Test-Path $Path)) {
         New-Item -ItemType Directory -Force -Path $Path | Out-Null
     }
@@ -86,28 +75,20 @@ function Invoke-RobocopyChecked {
 
 function Sync-GitRepository {
     Write-Step "Mise a jour Git"
-
     Assert-PathExists $SourcePath "Dossier source introuvable"
     Set-Location $SourcePath
 
     git status
-
     Write-Host "SERVWEB est un serveur de deploiement : les modifications locales sont supprimees."
 
     git fetch origin
-    if ($LASTEXITCODE -ne 0) {
-        throw "git fetch origin a echoue."
-    }
+    if ($LASTEXITCODE -ne 0) { throw "git fetch origin a echoue." }
 
     git reset --hard origin/main
-    if ($LASTEXITCODE -ne 0) {
-        throw "git reset --hard origin/main a echoue."
-    }
+    if ($LASTEXITCODE -ne 0) { throw "git reset --hard origin/main a echoue." }
 
     git clean -fd
-    if ($LASTEXITCODE -ne 0) {
-        throw "git clean -fd a echoue."
-    }
+    if ($LASTEXITCODE -ne 0) { throw "git clean -fd a echoue." }
 
     git log -1 --oneline
 }
@@ -123,7 +104,6 @@ function Expand-Artifact {
 
     Write-Host "Artefact : $artifactPath"
     Write-Host "Manifest : $manifestPath"
-
     Write-Host ""
     Write-Host "--- Manifest artefact ---"
     Get-Content $manifestPath -Raw | Write-Host
@@ -137,7 +117,6 @@ function Expand-Artifact {
     Assert-PathExists (Join-Path $PublishPath "web.config") "web.config publie introuvable apres extraction"
 
     $dll = Get-Item (Join-Path $PublishPath "MobileSLI.Expedition.Web.dll")
-    Write-Host ""
     Write-Host "Artefact extrait vers : $PublishPath"
     Write-Host "DLL LastWriteTime     : $($dll.LastWriteTime)"
     Write-Host "DLL Taille Mo         : $([math]::Round($dll.Length / 1MB, 2))"
@@ -149,9 +128,7 @@ function Backup-CurrentDeployment {
     Ensure-Directory $DeployPath
     Ensure-Directory $BackupRoot
 
-    $backupName = Get-Date -Format "yyyyMMdd-HHmmss"
-    $backupPath = Join-Path $BackupRoot $backupName
-
+    $backupPath = Join-Path $BackupRoot (Get-Date -Format "yyyyMMdd-HHmmss")
     New-Item -ItemType Directory -Path $backupPath -Force | Out-Null
 
     Invoke-RobocopyChecked `
@@ -167,18 +144,12 @@ function Enable-AppOffline {
     Write-Step "Mise hors ligne temporaire ASP.NET Core"
 
     Ensure-Directory $DeployPath
-
     $appOfflinePath = Join-Path $DeployPath "app_offline.htm"
 
     @"
 <html>
-<head>
-    <meta charset="utf-8" />
-    <title>Maintenance</title>
-</head>
-<body>
-    Application en cours de mise a jour.
-</body>
+<head><meta charset="utf-8" /><title>Maintenance</title></head>
+<body>Application en cours de mise a jour.</body>
 </html>
 "@ | Set-Content -Path $appOfflinePath -Encoding UTF8
 
@@ -188,7 +159,6 @@ function Enable-AppOffline {
 
 function Disable-AppOffline {
     $appOfflinePath = Join-Path $DeployPath "app_offline.htm"
-
     if (Test-Path $appOfflinePath) {
         Remove-Item -Path $appOfflinePath -Force -ErrorAction SilentlyContinue
         Write-Host "app_offline.htm supprime."
@@ -260,12 +230,10 @@ function Get-OrCreate-XmlChild {
     )
 
     $child = $Parent.SelectSingleNode($Name)
-
     if ($null -eq $child) {
         $child = $Document.CreateElement($Name)
         [void]$Parent.AppendChild($child)
     }
-
     return $child
 }
 
@@ -277,11 +245,7 @@ function Set-WebConfigEnvironmentVariable {
         [Parameter(Mandatory = $true)][string]$Value
     )
 
-    $environmentVariablesNode = Get-OrCreate-XmlChild `
-        -Document $WebConfig `
-        -Parent $AspNetCoreNode `
-        -Name "environmentVariables"
-
+    $environmentVariablesNode = Get-OrCreate-XmlChild -Document $WebConfig -Parent $AspNetCoreNode -Name "environmentVariables"
     $existingNode = $null
 
     foreach ($node in $environmentVariablesNode.SelectNodes("environmentVariable")) {
@@ -293,15 +257,8 @@ function Set-WebConfigEnvironmentVariable {
 
     if ($null -eq $existingNode) {
         $existingNode = $WebConfig.CreateElement("environmentVariable")
-
-        $nameAttribute = $WebConfig.CreateAttribute("name")
-        $nameAttribute.Value = $Name
-        [void]$existingNode.Attributes.Append($nameAttribute)
-
-        $valueAttribute = $WebConfig.CreateAttribute("value")
-        $valueAttribute.Value = $Value
-        [void]$existingNode.Attributes.Append($valueAttribute)
-
+        $existingNode.SetAttribute("name", $Name)
+        $existingNode.SetAttribute("value", $Value)
         [void]$environmentVariablesNode.AppendChild($existingNode)
     }
     else {
@@ -333,17 +290,8 @@ function Ensure-WebConfigEnvironment {
         throw "Impossible de creer un web.config IIS ASP.NET Core valide."
     }
 
-    Set-WebConfigEnvironmentVariable `
-        -WebConfig $webConfig `
-        -AspNetCoreNode $aspNetCoreNode `
-        -Name "ASPNETCORE_ENVIRONMENT" `
-        -Value $AspNetEnvironment
-
-    Set-WebConfigEnvironmentVariable `
-        -WebConfig $webConfig `
-        -AspNetCoreNode $aspNetCoreNode `
-        -Name "ExpeditionApi__BaseUrl" `
-        -Value $ApiBaseUrl
+    Set-WebConfigEnvironmentVariable -WebConfig $webConfig -AspNetCoreNode $aspNetCoreNode -Name "ASPNETCORE_ENVIRONMENT" -Value $AspNetEnvironment
+    Set-WebConfigEnvironmentVariable -WebConfig $webConfig -AspNetCoreNode $aspNetCoreNode -Name "ExpeditionApi__BaseUrl" -Value $ApiBaseUrl
 
     $webConfig.Save($WebConfigPath)
 
@@ -355,7 +303,6 @@ function Grant-AppPoolPermissions {
     Write-Step "Droits AppPool sur data, logs et scripts"
 
     $identity = "IIS AppPool\$AppPoolName"
-
     $paths = @(
         (Join-Path $DeployPath "data"),
         (Join-Path $DeployPath "logs"),
@@ -375,7 +322,6 @@ function Ensure-WebBinding {
     )
 
     Import-Module WebAdministration
-
     $expectedBinding = "*:${Port}:$HostHeader"
 
     $existing = Get-WebBinding -Name $SiteName -Protocol "http" -ErrorAction SilentlyContinue |
@@ -398,30 +344,16 @@ function Ensure-FirewallRule {
     )
 
     Write-Host "Verification pare-feu via netsh : $RuleName"
-
     $ruleOutput = netsh advfirewall firewall show rule name="$RuleName" 2>&1
     $ruleText = $ruleOutput -join "`n"
 
     $ruleMissing = $false
-
-    if ($LASTEXITCODE -ne 0) {
-        $ruleMissing = $true
-    }
-
-    if ($ruleText -match "No rules match" -or
-        $ruleText -match "Aucune r" -or
-        $ruleText -match "Aucune regle" -or
-        $ruleText -match "Aucun") {
-        $ruleMissing = $true
-    }
+    if ($LASTEXITCODE -ne 0) { $ruleMissing = $true }
+    if ($ruleText -match "No rules match" -or $ruleText -match "Aucune r" -or $ruleText -match "Aucune regle" -or $ruleText -match "Aucun") { $ruleMissing = $true }
 
     if ($ruleMissing) {
         netsh advfirewall firewall add rule name="$RuleName" dir=in action=allow protocol=TCP localport=$Port | Out-Host
-
-        if ($LASTEXITCODE -ne 0) {
-            throw "Impossible d'ajouter la regle pare-feu : $RuleName"
-        }
-
+        if ($LASTEXITCODE -ne 0) { throw "Impossible d'ajouter la regle pare-feu : $RuleName" }
         Write-Host "Regle pare-feu ajoutee : $RuleName"
     }
     else {
@@ -435,7 +367,6 @@ function Ensure-FinalIisConfiguration {
     Ensure-WebBinding -HostHeader $ExpeditionHost -Port $ShortWebPort
     Ensure-WebBinding -HostHeader $AdministrationHost -Port $ShortWebPort
     Ensure-WebBinding -HostHeader $LocalLockHost -Port $ShortWebPort
-
     Ensure-FirewallRule -RuleName $FirewallRuleName -Port $ShortWebPort
 }
 
@@ -452,28 +383,13 @@ function Remove-ObsoletePort5100 {
         Write-Host "Binding port 5100 supprime : $($binding.bindingInformation)"
     }
 
-    $ruleNames = @(
-        "ServeWebEXPE HTTP 5100",
-        "SERVWEB HTTP 5100",
-        "MobileSLI Expedition HTTP 5100"
-    )
-
+    $ruleNames = @("ServeWebEXPE HTTP 5100", "SERVWEB HTTP 5100", "MobileSLI Expedition HTTP 5100")
     foreach ($ruleName in $ruleNames) {
         $ruleOutput = netsh advfirewall firewall show rule name="$ruleName" 2>&1
         $ruleText = $ruleOutput -join "`n"
-
         $ruleExists = $true
-
-        if ($LASTEXITCODE -ne 0) {
-            $ruleExists = $false
-        }
-
-        if ($ruleText -match "No rules match" -or
-            $ruleText -match "Aucune r" -or
-            $ruleText -match "Aucune regle" -or
-            $ruleText -match "Aucun") {
-            $ruleExists = $false
-        }
+        if ($LASTEXITCODE -ne 0) { $ruleExists = $false }
+        if ($ruleText -match "No rules match" -or $ruleText -match "Aucune r" -or $ruleText -match "Aucune regle" -or $ruleText -match "Aucun") { $ruleExists = $false }
 
         if ($ruleExists) {
             netsh advfirewall firewall delete rule name="$ruleName" | Out-Host
@@ -487,56 +403,58 @@ function Restart-IisApplication {
 
     Import-Module WebAdministration
 
-    $appPool = Get-Item "IIS:\AppPools\$AppPoolName" -ErrorAction SilentlyContinue
-    if ($null -eq $appPool) {
-        throw "AppPool introuvable : $AppPoolName"
-    }
-
     $site = Get-Website -Name $SiteName -ErrorAction SilentlyContinue
-    if ($null -eq $site) {
-        throw "Site IIS introuvable : $SiteName"
-    }
+    if ($null -eq $site) { throw "Site IIS introuvable : $SiteName" }
+
+    $appPool = Get-Item "IIS:\AppPools\$AppPoolName" -ErrorAction SilentlyContinue
+    if ($null -eq $appPool) { throw "AppPool introuvable : $AppPoolName" }
 
     if ($site.State -ne "Started") {
+        Write-Host "Site IIS arrete. Demarrage du site : $SiteName"
         Start-Website -Name $SiteName
     }
+    else {
+        Write-Host "Site IIS deja demarre : $SiteName"
+    }
 
-    Restart-WebAppPool -Name $AppPoolName
+    $appPoolState = (Get-WebAppPoolState -Name $AppPoolName).Value
+
+    if ($appPoolState -eq "Started") {
+        Write-Host "AppPool deja demarre. Recyclage : $AppPoolName"
+        Restart-WebAppPool -Name $AppPoolName
+    }
+    else {
+        Write-Host "AppPool arrete. Demarrage : $AppPoolName"
+        Start-WebAppPool -Name $AppPoolName
+    }
+
     Start-Sleep -Seconds 3
+
+    $finalSite = Get-Website -Name $SiteName
+    $finalAppPoolState = (Get-WebAppPoolState -Name $AppPoolName).Value
+
+    if ($finalSite.State -ne "Started") { throw "Le site IIS n'est pas demarre apres redemarrage. Etat=$($finalSite.State)" }
+    if ($finalAppPoolState -ne "Started") { throw "L'AppPool n'est pas demarre apres redemarrage. Etat=$finalAppPoolState" }
+
+    Write-Host "IIS OK : Site=$($finalSite.State), AppPool=$finalAppPoolState"
 }
 
 function Test-HttpEndpoint {
     param([Parameter(Mandatory = $true)][string]$Url)
 
     try {
-        $response = Invoke-WebRequest `
-            -Uri $Url `
-            -UseBasicParsing `
-            -MaximumRedirection 0 `
-            -TimeoutSec 10 `
-            -ErrorAction SilentlyContinue
-
+        $response = Invoke-WebRequest -Uri $Url -UseBasicParsing -MaximumRedirection 0 -TimeoutSec 10 -ErrorAction SilentlyContinue
         $statusCode = [int]$response.StatusCode
         $location = $response.Headers["Location"]
-
-        if ($statusCode -ge 200 -and $statusCode -lt 400) {
-            Write-Host "[OK] Code=$statusCode Location=$location"
-        }
-        else {
-            Write-Host "[KO] Code=$statusCode Location=$location"
-        }
+        if ($statusCode -ge 200 -and $statusCode -lt 400) { Write-Host "[OK] Code=$statusCode Location=$location" }
+        else { Write-Host "[KO] Code=$statusCode Location=$location" }
     }
     catch {
         if ($null -ne $_.Exception.Response) {
             $statusCode = [int]$_.Exception.Response.StatusCode
             $location = $_.Exception.Response.Headers["Location"]
-
-            if ($statusCode -ge 200 -and $statusCode -lt 400) {
-                Write-Host "[OK] Code=$statusCode Location=$location"
-            }
-            else {
-                Write-Host "[KO] Code=$statusCode Location=$location"
-            }
+            if ($statusCode -ge 200 -and $statusCode -lt 400) { Write-Host "[OK] Code=$statusCode Location=$location" }
+            else { Write-Host "[KO] Code=$statusCode Location=$location" }
         }
         else {
             Write-Host "[KO] $($_.Exception.Message)"
@@ -546,7 +464,6 @@ function Test-HttpEndpoint {
 
 function Run-FinalChecks {
     Write-Step "Tests de verification"
-
     Import-Module WebAdministration
 
     Get-Website -Name $SiteName
@@ -554,10 +471,7 @@ function Run-FinalChecks {
 
     Write-Host ""
     Write-Host "--- Bindings IIS ---"
-
-    Get-WebBinding -Name $SiteName |
-        Select-Object protocol, bindingInformation |
-        Format-Table -AutoSize
+    Get-WebBinding -Name $SiteName | Select-Object protocol, bindingInformation | Format-Table -AutoSize
 
     Write-Host ""
     Write-Host "--- Tests finaux ---"
