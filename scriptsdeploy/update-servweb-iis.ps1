@@ -4,11 +4,16 @@ Set-StrictMode -Version Latest
 # ============================================================
 # Mise a jour SERVWEB IIS depuis artefact Git
 # ============================================================
-# IMPORTANT :
-# - Ce script NE FAIT PAS de dotnet build.
-# - Ce script NE FAIT PAS de dotnet publish.
-# - L'artefact doit etre publie en local puis pousse dans Git :
-#   artifacts\servweb\MobileSLI.Expedition.Web.zip
+# Role du script :
+# - ne compile jamais sur SERVWEB ;
+# - recupere l'artefact ZIP versionne dans Git ;
+# - extrait l'artefact dans C:\Publish ;
+# - sauvegarde l'ancien deploiement ;
+# - met l'application hors ligne via app_offline.htm ;
+# - copie vers IIS avec Robocopy ;
+# - garantit un web.config IIS ASP.NET Core valide ;
+# - redemarre l'AppPool ;
+# - execute les tests HTTP finaux.
 # ============================================================
 
 $SiteName = "MobileSLI.Expedition.Web"
@@ -88,6 +93,7 @@ function Sync-GitRepository {
     git status
 
     Write-Host "SERVWEB est un serveur de deploiement : les modifications locales sont supprimees."
+
     git fetch origin
     if ($LASTEXITCODE -ne 0) {
         throw "git fetch origin a echoue."
@@ -177,7 +183,6 @@ function Enable-AppOffline {
 "@ | Set-Content -Path $appOfflinePath -Encoding UTF8
 
     Start-Sleep -Seconds 5
-
     Write-Host "app_offline.htm cree : $appOfflinePath"
 }
 
@@ -219,6 +224,32 @@ function Ensure-ScheduledLockScript {
     else {
         Write-Host "Script source introuvable, conservation du script deja deploye si present : $sourceScript"
     }
+}
+
+function New-DefaultWebConfig {
+    param([Parameter(Mandatory = $true)][string]$WebConfigPath)
+
+    $content = @"
+<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+  <location path="." inheritInChildApplications="false">
+    <system.webServer>
+      <handlers>
+        <add name="aspNetCore" path="*" verb="*" modules="AspNetCoreModuleV2" resourceType="Unspecified" />
+      </handlers>
+      <aspNetCore processPath="dotnet" arguments=".\MobileSLI.Expedition.Web.dll" stdoutLogEnabled="false" stdoutLogFile=".\logs\stdout" hostingModel="inprocess">
+        <environmentVariables>
+          <environmentVariable name="ASPNETCORE_ENVIRONMENT" value="$AspNetEnvironment" />
+          <environmentVariable name="ExpeditionApi__BaseUrl" value="$ApiBaseUrl" />
+        </environmentVariables>
+      </aspNetCore>
+    </system.webServer>
+  </location>
+</configuration>
+"@
+
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($WebConfigPath, $content, $utf8NoBom)
 }
 
 function Get-OrCreate-XmlChild {
@@ -284,25 +315,22 @@ function Ensure-WebConfigEnvironment {
     Write-Step "Configuration web.config"
 
     if (-not (Test-Path $WebConfigPath)) {
-        throw "web.config introuvable : $WebConfigPath"
+        Write-Host "web.config introuvable, generation d'un web.config IIS ASP.NET Core."
+        New-DefaultWebConfig -WebConfigPath $WebConfigPath
     }
 
     [xml]$webConfig = Get-Content $WebConfigPath -Raw
+    $aspNetCoreNode = $webConfig.SelectSingleNode("//aspNetCore")
 
-    $configurationNode = $webConfig.SelectSingleNode("/configuration")
-    if ($null -eq $configurationNode) {
-        throw "Noeud /configuration introuvable dans web.config."
-    }
-
-    $systemWebServerNode = $webConfig.SelectSingleNode("/configuration/system.webServer")
-    if ($null -eq $systemWebServerNode) {
-        $systemWebServerNode = $webConfig.CreateElement("system.webServer")
-        [void]$configurationNode.AppendChild($systemWebServerNode)
-    }
-
-    $aspNetCoreNode = $webConfig.SelectSingleNode("/configuration/system.webServer/aspNetCore")
     if ($null -eq $aspNetCoreNode) {
-        throw "Noeud /configuration/system.webServer/aspNetCore introuvable dans web.config. Le web.config publie n'est pas un web.config ASP.NET Core IIS valide."
+        Write-Host "Noeud aspNetCore absent du web.config publie. Remplacement par un web.config IIS ASP.NET Core valide."
+        New-DefaultWebConfig -WebConfigPath $WebConfigPath
+        [xml]$webConfig = Get-Content $WebConfigPath -Raw
+        $aspNetCoreNode = $webConfig.SelectSingleNode("//aspNetCore")
+    }
+
+    if ($null -eq $aspNetCoreNode) {
+        throw "Impossible de creer un web.config IIS ASP.NET Core valide."
     }
 
     Set-WebConfigEnvironmentVariable `
