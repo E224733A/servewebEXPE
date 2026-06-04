@@ -32,8 +32,8 @@ public sealed class SqliteExpeditionDraftStore : IExpeditionDraftStore
     private const string ApiSource = "APPLICATION_WEB_EXPEDITION";
     private const string ApiStatusReadyForLock = "PRETE_VERROUILLAGE";
     private const string ApiUser = "APPLICATION_WEB_EXPEDITION";
-    private const int DraftRetentionDays = 14;
-    private const int LockHistoryRetentionDays = 90;
+    private const int DraftRetentionDays = 10;
+    private const int LockHistoryRetentionDays = 30;
 
     private readonly ExpeditionDbOptions _options;
     private readonly ILogger<SqliteExpeditionDraftStore> _logger;
