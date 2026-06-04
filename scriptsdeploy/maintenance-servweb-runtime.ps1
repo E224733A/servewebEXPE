@@ -1,4 +1,4 @@
-﻿# ============================================================
+# ============================================================
 # Maintenance autonome SERVWEB
 # ============================================================
 # Objectif :
@@ -130,15 +130,39 @@ function Test-LocalStatusEndpoint {
     param([Parameter(Mandatory = $true)][string]$Url)
 
     try {
-        $response = Invoke-RestMethod -Uri $Url -Method Get -TimeoutSec 15
+        $request = [System.Net.HttpWebRequest]::Create($Url)
+        $request.Method = "GET"
+        $request.Timeout = 15000
+        $request.ReadWriteTimeout = 15000
+        $request.UserAgent = "MobileSLI-SERVWEB-Maintenance"
 
-        $statusJson = $response | ConvertTo-Json -Depth 10 -Compress
-        Write-MaintenanceLog "Status SERVWEB OK : $statusJson"
+        $response = $request.GetResponse()
 
-        return $true
+        try {
+            $statusCode = [int]$response.StatusCode
+            $stream = $response.GetResponseStream()
+            $reader = New-Object System.IO.StreamReader($stream, [System.Text.Encoding]::UTF8)
+            $body = $reader.ReadToEnd()
+
+            if ($body.Length -gt 800) {
+                $body = $body.Substring(0, 800) + "..."
+            }
+
+            if ($statusCode -ge 200 -and $statusCode -lt 300) {
+                Write-MaintenanceLog "Status SERVWEB OK : HTTP $statusCode - $body"
+                return $true
+            }
+
+            Write-MaintenanceLog "Status SERVWEB KO : HTTP $statusCode - $body"
+            return $false
+        }
+        finally {
+            if ($null -ne $reader) { $reader.Dispose() }
+            if ($null -ne $response) { $response.Dispose() }
+        }
     }
     catch {
-        Write-MaintenanceLog "Status SERVWEB KO : $($_.Exception.Message)"
+        Write-MaintenanceLog "Status SERVWEB KO : $($_.Exception.GetType().FullName) - $($_.Exception.Message)"
         return $false
     }
 }
@@ -169,4 +193,3 @@ if (-not $statusOk) {
 }
 
 exit 0
-
