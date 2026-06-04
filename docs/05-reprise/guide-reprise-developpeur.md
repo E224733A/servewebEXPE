@@ -33,8 +33,8 @@ Lire dans cet ordre :
 2. `docs/01-architecture/vue-ensemble-serveweb.md` ;
 3. `docs/02-fonctionnement/flux-expedition-administration.md` ;
 4. `docs/02-fonctionnement/stockage-local-sqlite.md` ;
-5. `docs/CONTRAT_JSON_EXPEDITION.md` ;
-6. `docs/VERROUILLAGE_PLANIFIE_22H35.md` ;
+5. `docs/01-api/contrat-json-expedition.md` ;
+6. `docs/02-fonctionnement/verrouillage-planifie-22h35.md` ;
 7. `docs/03-deploiement/servweb-expedition-production.md` ;
 8. `docs/04-exploitation/diagnostic-et-reprise.md`.
 
