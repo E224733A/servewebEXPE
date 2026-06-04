@@ -15,7 +15,7 @@ $ExpeditionUrl = "http://expedition.sli.local"
 $AdministrationUrl = "http://admin.sli.local"
 $LocalVerrouillageUrl = "http://localhost/verrouillage/executer"
 $ApiBaseUrl = "http://api.mobilesli.intra:5000/"
-$AspNetEnvironment = "Development"
+$AspNetEnvironment = "Production"
 
 $FirewallRuleName = "ServeWebEXPE HTTP 80"
 

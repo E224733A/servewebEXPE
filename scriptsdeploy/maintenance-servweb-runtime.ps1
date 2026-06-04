@@ -1,6 +1,3 @@
-$ErrorActionPreference = "Stop"
-Set-StrictMode -Version Latest
-
 # ============================================================
 # Maintenance autonome SERVWEB
 # ============================================================
@@ -25,6 +22,9 @@ param(
     [int]$ArchivedLogRetentionDays = 30,
     [int]$MaxActiveLogSizeMb = 10
 )
+
+$ErrorActionPreference = "Stop"
+Set-StrictMode -Version Latest
 
 function Write-MaintenanceLog {
     param([Parameter(Mandatory = $true)][string]$Message)

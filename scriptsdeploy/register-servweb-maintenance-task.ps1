@@ -1,6 +1,3 @@
-$ErrorActionPreference = "Stop"
-Set-StrictMode -Version Latest
-
 # ============================================================
 # Enregistrement tache planifiee de maintenance SERVWEB
 # ============================================================
@@ -13,6 +10,9 @@ param(
     [string]$TaskName = "MobileSLI SERVWEB Maintenance quotidienne",
     [string]$RunAt = "04:10"
 )
+
+$ErrorActionPreference = "Stop"
+Set-StrictMode -Version Latest
 
 function Ensure-Directory {
     param([Parameter(Mandatory = $true)][string]$Path)
