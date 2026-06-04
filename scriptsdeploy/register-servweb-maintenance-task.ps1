@@ -2,6 +2,7 @@
 # Enregistrement tache planifiee de maintenance SERVWEB
 # ============================================================
 # La tache execute maintenance-servweb-runtime.ps1 tous les jours.
+# Execution sous SYSTEM pour ne pas dependre d'une session utilisateur.
 # ============================================================
 
 param(
@@ -14,6 +15,15 @@ param(
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
+function Write-Step {
+    param([Parameter(Mandatory = $true)][string]$Message)
+
+    Write-Host ""
+    Write-Host "============================================================"
+    Write-Host $Message
+    Write-Host "============================================================"
+}
+
 function Ensure-Directory {
     param([Parameter(Mandatory = $true)][string]$Path)
 
@@ -22,37 +32,79 @@ function Ensure-Directory {
     }
 }
 
+function Assert-Admin {
+    $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+    $principal = New-Object Security.Principal.WindowsPrincipal($identity)
+    $isAdmin = $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+
+    if (-not $isAdmin) {
+        throw "Ce script doit etre execute dans PowerShell en administrateur."
+    }
+}
+
+function Invoke-SchtasksChecked {
+    param([Parameter(Mandatory = $true)][string[]]$Arguments)
+
+    & schtasks.exe @Arguments
+
+    if ($LASTEXITCODE -ne 0) {
+        throw "schtasks.exe a echoue. Code=$LASTEXITCODE Arguments=$($Arguments -join ' ')"
+    }
+}
+
+Write-Step "Verification droits administrateur"
+Assert-Admin
+
+Write-Step "Verification script source"
 if (-not (Test-Path $SourceScriptPath)) {
     throw "Script source introuvable : $SourceScriptPath"
 }
 
+Write-Host "Source : $SourceScriptPath"
+Write-Host "Cible  : $DeployScriptPath"
+
+Write-Step "Copie du script de maintenance dans le dossier deploye"
 $deployDirectory = Split-Path -Path $DeployScriptPath -Parent
 Ensure-Directory -Path $deployDirectory
-
 Copy-Item -Path $SourceScriptPath -Destination $DeployScriptPath -Force
 
-$action = New-ScheduledTaskAction `
-    -Execute "powershell.exe" `
-    -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$DeployScriptPath`""
+if (-not (Test-Path $DeployScriptPath)) {
+    throw "Script deploye introuvable apres copie : $DeployScriptPath"
+}
 
-$trigger = New-ScheduledTaskTrigger -Daily -At $RunAt
-
-$settings = New-ScheduledTaskSettingsSet `
-    -StartWhenAvailable `
-    -MultipleInstances IgnoreNew `
-    -ExecutionTimeLimit (New-TimeSpan -Minutes 10)
-
-Register-ScheduledTask `
-    -TaskName $TaskName `
-    -Action $action `
-    -Trigger $trigger `
-    -Settings $settings `
-    -Description "Maintenance autonome SERVWEB : status local, rotation logs, purge backups." `
-    -Force
-
-Write-Host "Tache planifiee creee ou mise a jour : $TaskName"
-Write-Host "Horaire : $RunAt"
 Write-Host "Script deploye : $DeployScriptPath"
 
-Get-ScheduledTask -TaskName $TaskName | Select-Object TaskName, State
-Get-ScheduledTaskInfo -TaskName $TaskName | Select-Object LastRunTime, LastTaskResult, NextRunTime
+Write-Step "Creation ou mise a jour de la tache planifiee"
+$taskCommand = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$DeployScriptPath`""
+
+Invoke-SchtasksChecked -Arguments @(
+    "/Create",
+    "/TN", $TaskName,
+    "/TR", $taskCommand,
+    "/SC", "DAILY",
+    "/ST", $RunAt,
+    "/RU", "SYSTEM",
+    "/RL", "HIGHEST",
+    "/F"
+)
+
+Write-Step "Tache planifiee enregistree"
+Write-Host "Nom     : $TaskName"
+Write-Host "Horaire : $RunAt"
+Write-Host "Compte  : SYSTEM"
+Write-Host "Action  : $taskCommand"
+
+Write-Step "Verification de la tache"
+Invoke-SchtasksChecked -Arguments @(
+    "/Query",
+    "/TN", $TaskName,
+    "/V",
+    "/FO", "LIST"
+)
+
+Write-Step "Test manuel conseille"
+Write-Host "Pour tester maintenant :"
+Write-Host "Start-ScheduledTask -TaskName `"$TaskName`""
+Write-Host "Start-Sleep -Seconds 10"
+Write-Host "Get-ScheduledTaskInfo -TaskName `"$TaskName`""
+Write-Host "Get-Content `"C:\Services\MobileSLI.Expedition.Web\logs\maintenance-servweb.log`" -Tail 80"
