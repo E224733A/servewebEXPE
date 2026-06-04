@@ -166,7 +166,7 @@ Invoke-WebRequest "http://expedition.sli.local/administration" -UseBasicParsing 
 Résultat attendu :
 
 ```text
-http://admin.sli.local/expedition       -> 302 vers /administration
+http://admin.sli.local/expedition          -> 302 vers /administration
 http://expedition.sli.local/administration -> 302 vers /expedition
 ```
 
@@ -279,15 +279,17 @@ C:\Services\MobileSLI.Expedition.Web\scripts\maintenance-servweb-runtime.ps1
 
 Le script de maintenance :
 
-1. vérifie que le port HTTP local répond par test TCP ;
-2. journalise le résultat ;
-3. archive les gros fichiers `.log` ;
-4. supprime les anciens logs archivés ;
-5. supprime les anciens backups de déploiement ;
-6. ne touche pas à SQLite ;
-7. ne supprime pas le payload debug versionné.
+1. journalise son exécution ;
+2. archive les gros fichiers `.log` ;
+3. supprime les anciens logs archivés ;
+4. supprime les anciens backups de déploiement ;
+5. ne touche pas à SQLite ;
+6. ne supprime pas le payload debug versionné ;
+7. ne fait pas de test HTTP/TCP applicatif.
 
-Contrôle manuel :
+Le contrôle réseau a volontairement été retiré de cette tâche. Des tests HTTP/TCP lancés sous le compte `SYSTEM` ont provoqué des erreurs mémoire instables sur SERVWEB. La supervision applicative reste donc séparée de la maintenance fichiers.
+
+Contrôle manuel du script de maintenance :
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\Services\MobileSLI.Expedition.Web\scripts\maintenance-servweb-runtime.ps1"
@@ -296,7 +298,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\Services\MobileSLI.E
 Résultat attendu dans le log :
 
 ```text
-Status SERVWEB OK : TCP localhost:80
+Controle applicatif reseau ignore dans cette tache pour fiabilite SYSTEM.
 Logs rotations : 0
 Logs archives supprimes : 0
 Backups supprimes : 0
@@ -317,6 +319,18 @@ Résultat attendu :
 ```text
 Dernier résultat: 0
 ```
+
+## Contrôle applicatif séparé de la maintenance
+
+Comme la tâche de maintenance ne fait plus de test réseau, le contrôle applicatif doit être fait séparément :
+
+```powershell
+Invoke-WebRequest "http://localhost/preparations/status" -UseBasicParsing
+Invoke-WebRequest "http://expedition.sli.local" -UseBasicParsing
+Invoke-WebRequest "http://admin.sli.local" -UseBasicParsing
+```
+
+Ces vérifications sont aussi exécutées par le script de déploiement production `update-servweb-iis-prod.ps1`.
 
 ## Rollback applicatif
 
@@ -379,18 +393,18 @@ Vérifier le log :
 Get-Content "C:\Services\MobileSLI.Expedition.Web\logs\maintenance-servweb.log" -Tail 120
 ```
 
-Vérifier que le script déployé contient le test TCP :
+Vérifier que le script déployé est la version non bloquante :
 
 ```powershell
 Select-String `
   -Path "C:\Services\MobileSLI.Expedition.Web\scripts\maintenance-servweb-runtime.ps1" `
-  -Pattern "TcpClient|Invoke-RestMethod|HttpWebRequest"
+  -Pattern "Controle applicatif reseau ignore|Invoke-RestMethod|HttpWebRequest|TcpClient"
 ```
 
 Résultat attendu :
 
 ```text
-TcpClient
+Controle applicatif reseau ignore
 ```
 
 Résultats non attendus :
@@ -398,6 +412,7 @@ Résultats non attendus :
 ```text
 Invoke-RestMethod
 HttpWebRequest
+TcpClient
 ```
 
 Si le script source Git a été corrigé mais pas le script déployé, relancer :
@@ -418,13 +433,19 @@ http://expedition.sli.local = 200
 http://admin.sli.local = 200
 création de la tâche de maintenance = OK
 lancement de la tâche de maintenance = OK côté planificateur
+Dernier résultat tâche maintenance = 0
+script maintenance manuel = OK
+script maintenance SYSTEM = OK
 ```
 
-À vérifier après la dernière correction maintenance :
+Dernier comportement validé :
 
 ```text
-Status SERVWEB OK : TCP localhost:80
-Dernier résultat tâche maintenance = 0
+Controle applicatif reseau ignore dans cette tache pour fiabilite SYSTEM.
+Logs rotations : 0
+Logs archives supprimes : 0
+Backups supprimes : 0
+Fin maintenance SERVWEB
 ```
 
 ## Limites connues
@@ -437,7 +458,8 @@ Cette mise en production reste une mise en production intranet pragmatique :
 4. dépendance forte aux tâches Windows ;
 5. sécurité intranet non durcie au niveau d'une plateforme publique ;
 6. rollback manuel ;
-7. surveillance RAM/disque à faire côté serveur Windows.
+7. surveillance RAM/disque à faire côté serveur Windows ;
+8. la maintenance quotidienne nettoie les fichiers, mais ne supervise pas l'application.
 
 ## Conclusion
 
@@ -449,4 +471,5 @@ Le serveur est maintenable si les règles suivantes sont respectées :
 4. conserver `data`, `logs` et `scripts` ;
 5. vérifier `Production` après chaque déploiement ;
 6. vérifier les tâches Windows ;
-7. documenter chaque changement d'exploitation.
+7. contrôler l'application séparément de la maintenance fichiers ;
+8. documenter chaque changement d'exploitation.
