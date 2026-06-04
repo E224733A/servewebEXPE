@@ -2,8 +2,7 @@
 # Maintenance autonome SERVWEB
 # ============================================================
 # Objectif :
-# - verifier que l'application repond localement ;
-# - journaliser l'etat /preparations/status ;
+# - verifier que le port HTTP local de l'application repond ;
 # - purger les anciens backups de deploiement ;
 # - purger les anciens logs archives ;
 # - archiver les gros fichiers .log avant qu'ils ne grossissent trop.
@@ -11,7 +10,9 @@
 # Important :
 # - ce script ne modifie pas la base SQLite ;
 # - la purge SQLite reste geree par l'application SERVWEB ;
-# - ce script ne supprime pas le payload debug versionne.
+# - ce script ne supprime pas le payload debug versionne ;
+# - ce script evite volontairement de lire le JSON /preparations/status
+#   pour rester fiable sous le compte SYSTEM et limiter la consommation memoire.
 # ============================================================
 
 param(
@@ -20,7 +21,8 @@ param(
     [string]$StatusUrl = "http://localhost/preparations/status",
     [int]$BackupRetentionDays = 30,
     [int]$ArchivedLogRetentionDays = 30,
-    [int]$MaxActiveLogSizeMb = 10
+    [int]$MaxActiveLogSizeMb = 10,
+    [int]$TcpTimeoutMilliseconds = 5000
 )
 
 $ErrorActionPreference = "Stop"
@@ -127,43 +129,53 @@ function Remove-OldArchivedLogs {
 }
 
 function Test-LocalStatusEndpoint {
-    param([Parameter(Mandatory = $true)][string]$Url)
+    param(
+        [Parameter(Mandatory = $true)][string]$Url,
+        [Parameter(Mandatory = $true)][int]$TimeoutMilliseconds
+    )
+
+    $client = $null
+    $asyncResult = $null
 
     try {
-        $request = [System.Net.HttpWebRequest]::Create($Url)
-        $request.Method = "GET"
-        $request.Timeout = 15000
-        $request.ReadWriteTimeout = 15000
-        $request.UserAgent = "MobileSLI-SERVWEB-Maintenance"
+        $uri = [System.Uri]::new($Url)
+        $hostName = $uri.Host
+        $port = $uri.Port
 
-        $response = $request.GetResponse()
-
-        try {
-            $statusCode = [int]$response.StatusCode
-            $stream = $response.GetResponseStream()
-            $reader = New-Object System.IO.StreamReader($stream, [System.Text.Encoding]::UTF8)
-            $body = $reader.ReadToEnd()
-
-            if ($body.Length -gt 800) {
-                $body = $body.Substring(0, 800) + "..."
+        if ($port -le 0) {
+            if ($uri.Scheme -eq "https") {
+                $port = 443
             }
-
-            if ($statusCode -ge 200 -and $statusCode -lt 300) {
-                Write-MaintenanceLog "Status SERVWEB OK : HTTP $statusCode - $body"
-                return $true
+            else {
+                $port = 80
             }
+        }
 
-            Write-MaintenanceLog "Status SERVWEB KO : HTTP $statusCode - $body"
+        $client = New-Object System.Net.Sockets.TcpClient
+        $asyncResult = $client.BeginConnect($hostName, $port, $null, $null)
+        $connected = $asyncResult.AsyncWaitHandle.WaitOne($TimeoutMilliseconds, $false)
+
+        if (-not $connected) {
+            Write-MaintenanceLog "Status SERVWEB KO : TCP $hostName`:$port timeout apres $TimeoutMilliseconds ms"
             return $false
         }
-        finally {
-            if ($null -ne $reader) { $reader.Dispose() }
-            if ($null -ne $response) { $response.Dispose() }
-        }
+
+        $client.EndConnect($asyncResult)
+        Write-MaintenanceLog "Status SERVWEB OK : TCP $hostName`:$port"
+        return $true
     }
     catch {
         Write-MaintenanceLog "Status SERVWEB KO : $($_.Exception.GetType().FullName) - $($_.Exception.Message)"
         return $false
+    }
+    finally {
+        if ($null -ne $asyncResult -and $null -ne $asyncResult.AsyncWaitHandle) {
+            $asyncResult.AsyncWaitHandle.Close()
+        }
+
+        if ($null -ne $client) {
+            $client.Close()
+        }
     }
 }
 
@@ -179,8 +191,9 @@ Write-MaintenanceLog "StatusUrl=$StatusUrl"
 Write-MaintenanceLog "BackupRetentionDays=$BackupRetentionDays"
 Write-MaintenanceLog "ArchivedLogRetentionDays=$ArchivedLogRetentionDays"
 Write-MaintenanceLog "MaxActiveLogSizeMb=$MaxActiveLogSizeMb"
+Write-MaintenanceLog "TcpTimeoutMilliseconds=$TcpTimeoutMilliseconds"
 
-$statusOk = Test-LocalStatusEndpoint -Url $StatusUrl
+$statusOk = Test-LocalStatusEndpoint -Url $StatusUrl -TimeoutMilliseconds $TcpTimeoutMilliseconds
 
 Rotate-LargeLogs -Path $LogsPath -MaxSizeMb $MaxActiveLogSizeMb
 Remove-OldArchivedLogs -Path $LogsPath -RetentionDays $ArchivedLogRetentionDays
