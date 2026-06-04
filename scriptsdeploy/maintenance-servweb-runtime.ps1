@@ -1,4 +1,4 @@
-# ============================================================
+﻿# ============================================================
 # Maintenance autonome SERVWEB
 # ============================================================
 # Objectif :
@@ -64,7 +64,7 @@ function Remove-OldBackupDirectories {
         Remove-Item -Path $directory.FullName -Recurse -Force
     }
 
-    Write-MaintenanceLog "Backups supprimes : $($directories.Count)"
+    Write-MaintenanceLog "Backups supprimes : $(@($directories).Count)"
 }
 
 function Rotate-LargeLogs {
@@ -93,7 +93,7 @@ function Rotate-LargeLogs {
         New-Item -ItemType File -Path $log.FullName -Force | Out-Null
     }
 
-    Write-MaintenanceLog "Logs rotations : $($logs.Count)"
+    Write-MaintenanceLog "Logs rotations : $(@($logs).Count)"
 }
 
 function Remove-OldArchivedLogs {
@@ -123,7 +123,7 @@ function Remove-OldArchivedLogs {
         Remove-Item -Path $log.FullName -Force
     }
 
-    Write-MaintenanceLog "Logs archives supprimes : $($archivedLogs.Count)"
+    Write-MaintenanceLog "Logs archives supprimes : $(@($archivedLogs).Count)"
 }
 
 function Test-LocalStatusEndpoint {
@@ -169,3 +169,4 @@ if (-not $statusOk) {
 }
 
 exit 0
+
