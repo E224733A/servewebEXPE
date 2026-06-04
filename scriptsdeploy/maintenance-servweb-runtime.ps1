@@ -2,7 +2,6 @@
 # Maintenance autonome SERVWEB
 # ============================================================
 # Objectif :
-# - verifier que le port HTTP local de l'application repond ;
 # - purger les anciens backups de deploiement ;
 # - purger les anciens logs archives ;
 # - archiver les gros fichiers .log avant qu'ils ne grossissent trop.
@@ -11,8 +10,13 @@
 # - ce script ne modifie pas la base SQLite ;
 # - la purge SQLite reste geree par l'application SERVWEB ;
 # - ce script ne supprime pas le payload debug versionne ;
-# - ce script evite volontairement de lire le JSON /preparations/status
-#   pour rester fiable sous le compte SYSTEM et limiter la consommation memoire.
+# - ce script ne fait pas de test HTTP/TCP bloquant.
+#
+# Raison :
+# - sur SERVWEB, les appels reseau lances par une tache SYSTEM ont provoque
+#   des erreurs memoire non fiables ;
+# - la verification applicative reste faite par le script de deploiement
+#   update-servweb-iis-prod.ps1 et par les controles manuels documentes.
 # ============================================================
 
 param(
@@ -21,8 +25,7 @@ param(
     [string]$StatusUrl = "http://localhost/preparations/status",
     [int]$BackupRetentionDays = 30,
     [int]$ArchivedLogRetentionDays = 30,
-    [int]$MaxActiveLogSizeMb = 10,
-    [int]$TcpTimeoutMilliseconds = 5000
+    [int]$MaxActiveLogSizeMb = 10
 )
 
 $ErrorActionPreference = "Stop"
@@ -128,57 +131,6 @@ function Remove-OldArchivedLogs {
     Write-MaintenanceLog "Logs archives supprimes : $(@($archivedLogs).Count)"
 }
 
-function Test-LocalStatusEndpoint {
-    param(
-        [Parameter(Mandatory = $true)][string]$Url,
-        [Parameter(Mandatory = $true)][int]$TimeoutMilliseconds
-    )
-
-    $client = $null
-    $asyncResult = $null
-
-    try {
-        $uri = [System.Uri]::new($Url)
-        $hostName = $uri.Host
-        $port = $uri.Port
-
-        if ($port -le 0) {
-            if ($uri.Scheme -eq "https") {
-                $port = 443
-            }
-            else {
-                $port = 80
-            }
-        }
-
-        $client = New-Object System.Net.Sockets.TcpClient
-        $asyncResult = $client.BeginConnect($hostName, $port, $null, $null)
-        $connected = $asyncResult.AsyncWaitHandle.WaitOne($TimeoutMilliseconds, $false)
-
-        if (-not $connected) {
-            Write-MaintenanceLog "Status SERVWEB KO : TCP $hostName`:$port timeout apres $TimeoutMilliseconds ms"
-            return $false
-        }
-
-        $client.EndConnect($asyncResult)
-        Write-MaintenanceLog "Status SERVWEB OK : TCP $hostName`:$port"
-        return $true
-    }
-    catch {
-        Write-MaintenanceLog "Status SERVWEB KO : $($_.Exception.GetType().FullName) - $($_.Exception.Message)"
-        return $false
-    }
-    finally {
-        if ($null -ne $asyncResult -and $null -ne $asyncResult.AsyncWaitHandle) {
-            $asyncResult.AsyncWaitHandle.Close()
-        }
-
-        if ($null -ne $client) {
-            $client.Close()
-        }
-    }
-}
-
 $LogsPath = Join-Path $ServiceRoot "logs"
 Ensure-Directory -Path $LogsPath
 
@@ -187,22 +139,16 @@ $MaintenanceLogFile = Join-Path $LogsPath "maintenance-servweb.log"
 Write-MaintenanceLog "Debut maintenance SERVWEB"
 Write-MaintenanceLog "ServiceRoot=$ServiceRoot"
 Write-MaintenanceLog "BackupRoot=$BackupRoot"
-Write-MaintenanceLog "StatusUrl=$StatusUrl"
+Write-MaintenanceLog "StatusUrlReference=$StatusUrl"
 Write-MaintenanceLog "BackupRetentionDays=$BackupRetentionDays"
 Write-MaintenanceLog "ArchivedLogRetentionDays=$ArchivedLogRetentionDays"
 Write-MaintenanceLog "MaxActiveLogSizeMb=$MaxActiveLogSizeMb"
-Write-MaintenanceLog "TcpTimeoutMilliseconds=$TcpTimeoutMilliseconds"
-
-$statusOk = Test-LocalStatusEndpoint -Url $StatusUrl -TimeoutMilliseconds $TcpTimeoutMilliseconds
+Write-MaintenanceLog "Controle applicatif reseau ignore dans cette tache pour fiabilite SYSTEM."
 
 Rotate-LargeLogs -Path $LogsPath -MaxSizeMb $MaxActiveLogSizeMb
 Remove-OldArchivedLogs -Path $LogsPath -RetentionDays $ArchivedLogRetentionDays
 Remove-OldBackupDirectories -Path $BackupRoot -RetentionDays $BackupRetentionDays
 
 Write-MaintenanceLog "Fin maintenance SERVWEB"
-
-if (-not $statusOk) {
-    exit 1
-}
 
 exit 0
