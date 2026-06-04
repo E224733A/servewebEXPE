@@ -2,11 +2,15 @@
 
 ## Objectif
 
-Garantir qu’un lot Expédition prêt est envoyé automatiquement chaque jour à l’API centrale, sans dépendre du réveil du processus IIS.
+Garantir qu’un lot Expédition prêt est envoyé automatiquement chaque jour à l’API centrale, sans dépendre uniquement du réveil du processus IIS.
 
 Le déclencheur principal est une tâche planifiée Windows.
 
-## Heure actuelle
+Le `BackgroundService` reste un filet de sécurité applicatif, mais il ne doit pas être considéré comme le mécanisme principal en production.
+
+## Heure de verrouillage
+
+Heure cible :
 
 ```text
 22h35
@@ -18,21 +22,72 @@ Fenêtre acceptée par l’application :
 22h35 à 22h55
 ```
 
-La version 23h55 n’est plus présente dans le dépôt.
+La version 23h55 est supprimée.
 
-La version 00h05 est obsolète et ne doit plus apparaître dans la documentation actuelle.
+La version 00h05 est obsolète.
+
+## Etat réseau final
+
+L’interface Web SERVWEB est exposée en HTTP sur le port 80 avec host headers.
+
+URLs finales :
+
+```text
+http://expedition.sli.local
+http://admin.sli.local
+```
+
+Endpoint technique local :
+
+```text
+http://localhost/verrouillage/executer
+```
+
+Le port `5100` ne doit plus être utilisé.
+
+Un binding IIS local doit exister :
+
+```text
+*:80:localhost
+```
 
 ## Fichiers concernés
 
 ```text
-scriptsdeploy/register-verrouillage-task.ps1
 scriptsdeploy/run-verrouillage.ps1
+scriptsdeploy/update-servweb-iis-prod.ps1
 src/MobileSLI.Expedition.Web/Options/VerrouillageOptions.cs
 src/MobileSLI.Expedition.Web/Services/VerrouillageService.cs
 src/MobileSLI.Expedition.Web/Controllers/VerrouillageController.cs
 src/MobileSLI.Expedition.Web/Background/VerrouillageBackgroundService.cs
 src/MobileSLI.Expedition.Web/appsettings.json
 src/MobileSLI.Expedition.Web/appsettings.Development.json
+```
+
+## Configuration applicative
+
+Configuration attendue dans `appsettings.json` :
+
+```json
+{
+  "Verrouillage": {
+    "Enabled": true,
+    "TimeZoneId": "Europe/Paris",
+    "Hour": 22,
+    "Minute": 35,
+    "WindowMinutes": 20,
+    "CheckEverySeconds": 60,
+    "LotSequence": "001",
+    "LockSecretHeaderName": "X-SERVEXPE-LOCK-SECRET",
+    "LockSecret": ""
+  }
+}
+```
+
+En production, l’environnement ASP.NET Core doit être :
+
+```text
+ASPNETCORE_ENVIRONMENT=Production
 ```
 
 ## Tâche Windows
@@ -55,7 +110,7 @@ Script exécuté :
 C:\Services\MobileSLI.Expedition.Web\scripts\run-verrouillage.ps1
 ```
 
-Comportement :
+Comportement attendu :
 
 ```text
 StartWhenAvailable
@@ -68,7 +123,7 @@ ExecutionTimeLimit 10 minutes
 Le script appelle :
 
 ```text
-POST http://localhost:5100/verrouillage/executer
+POST http://localhost/verrouillage/executer
 ```
 
 Il écrit :
@@ -102,7 +157,7 @@ est réservé aux appels `localhost`.
 
 Tout appel distant doit être refusé.
 
-Si un secret est configuré dans `Verrouillage:LockSecret`, le script doit fournir :
+Si un secret est configuré dans `Verrouillage:LockSecret`, le script doit fournir l’en-tête :
 
 ```text
 X-SERVEXPE-LOCK-SECRET
@@ -184,9 +239,10 @@ Résultat attendu :
 
 ```json
 {
-  "date": "2026-05-22T22:35:15.0000000+02:00",
+  "date": "2026-06-04T22:35:15.0000000+02:00",
   "codeRetour": 0,
-  "message": "SUCCESS"
+  "message": "SUCCESS",
+  "url": "http://localhost/verrouillage/executer"
 }
 ```
 
@@ -230,26 +286,44 @@ Les anciens lots peuvent rester en :
 REMPLACE
 ```
 
-## Test réel validé
+## Commandes de diagnostic rapides
 
-Le verrouillage à 22h35 a été validé avec :
+Vérifier que SERVWEB répond :
 
-```text
-DateTournee = 2026-05-25
-CodeTournee = GLOBAL
-StatutLot = VERROUILLE
-DateCreation = 2026-05-22 22:35:15 +02:00
+```powershell
+Invoke-WebRequest "http://localhost/preparations/status" -UseBasicParsing
 ```
 
-Le mobile a ensuite lu les données Expédition ajoutées sans erreur.
+Vérifier les logs :
 
-## Conclusion
+```powershell
+Get-Content "C:\Services\MobileSLI.Expedition.Web\logs\verrouillage-planifie.log" -Tail 80
+Get-Content "C:\Services\MobileSLI.Expedition.Web\logs\verrouillage-planifie-heartbeat.json" -Raw
+```
 
-La solution est adaptée à un fonctionnement quotidien si :
+Vérifier le script déployé :
 
-- SERVWEB est allumé ;
-- IIS sert correctement l’application ;
-- l’API centrale est joignable ;
-- les tournées sont prêtes pour verrouillage ;
-- la tâche Windows existe encore ;
-- le heartbeat est surveillé.
+```powershell
+Get-Content "C:\Services\MobileSLI.Expedition.Web\scripts\run-verrouillage.ps1" -Raw
+```
+
+## Tests réels validés
+
+Un verrouillage 22h35 a déjà été validé sur le projet avec réception API centrale.
+
+Les tests exacts à relancer après chaque modification d’exploitation sont :
+
+```text
+Get-ScheduledTaskInfo
+lecture du heartbeat
+lecture du log verrouillage
+contrôle SQL côté API centrale
+```
+
+## Documentation liée
+
+La procédure complète de mise en production SERVWEB est documentée dans :
+
+```text
+docs/03-deploiement/servweb-expedition-production.md
+```
