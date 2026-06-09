@@ -17,8 +17,10 @@ Le `BackgroundService` reste un filet de sécurité applicatif, mais il ne doit 
 Fenêtre acceptée par l’application :
 
 ```text
-22h35 à 22h55
+22h35 inclus à 22h55 exclu
 ```
+
+La fenêtre est calculée avec `WindowMinutes = 20`.
 
 Les versions 23h55 et 00h05 sont obsolètes.
 
@@ -72,6 +74,10 @@ Verrouillage:LotSequence = 001
 Verrouillage:LockSecretHeaderName = X-SERVEXPE-LOCK-SECRET
 ```
 
+Si `Verrouillage:LockSecret` est vide, aucun secret n’est exigé pour l’appel local.
+
+Si `Verrouillage:LockSecret` est renseigné, la tâche Windows doit transmettre la même valeur via l’en-tête technique.
+
 ## Tâche Windows
 
 Nom :
@@ -119,6 +125,28 @@ Erreur :
 exit 1
 ```
 
+## Secret technique optionnel
+
+Le script lit le secret depuis :
+
+```powershell
+$env:SERVEXPE_LOCK_SECRET
+```
+
+Si cette variable est renseignée, le script transmet :
+
+```text
+X-SERVEXPE-LOCK-SECRET
+```
+
+La valeur doit correspondre à la configuration applicative :
+
+```text
+Verrouillage:LockSecret
+```
+
+Ne jamais versionner une vraie valeur de secret dans Git.
+
 ## Sécurité du endpoint
 
 Le endpoint suivant est réservé à `localhost` :
@@ -129,10 +157,33 @@ POST /verrouillage/executer
 
 Tout appel distant doit être refusé.
 
-Si un secret est configuré, le script doit transmettre :
+Réponse attendue en cas d’appel distant :
 
 ```text
-X-SERVEXPE-LOCK-SECRET
+403 Forbidden
+Accès refusé : verrouillage planifié réservé à localhost.
+```
+
+## Réponse du endpoint local
+
+En cas de succès, le endpoint retourne un JSON de synthèse :
+
+```json
+{
+  "success": true,
+  "lotBuilt": true,
+  "message": "Verrouillage exécuté pour 1 tournée(s). Lot : SERVEXPE-2026-06-05-2235-001."
+}
+```
+
+En cas d’échec, le endpoint retourne un statut HTTP 500 avec le même format général :
+
+```json
+{
+  "success": false,
+  "lotBuilt": true,
+  "message": "message d'erreur"
+}
 ```
 
 ## Règle métier
@@ -146,6 +197,14 @@ et en état PRET_VERROUILLAGE ou PRETE_VERROUILLAGE
 
 Si aucune tournée n’est prête, aucun POST n’est envoyé à l’API centrale.
 
+## Protection contre les doubles exécutions
+
+Le service utilise un verrou en mémoire pour refuser un second verrouillage déjà en cours.
+
+Le stockage SQLite marque les tournées verrouillées après succès.
+
+Une tournée déjà verrouillée localement ne doit plus être modifiée.
+
 ## Retry automatique
 
 Comportement :
@@ -154,6 +213,28 @@ Comportement :
 2. si échec technique et lot construit, attente de 60 secondes ;
 3. deuxième tentative uniquement si la fenêtre 22h35-22h55 est encore ouverte ;
 4. pas de retry utile sur conflit métier, validation ou date expirée.
+
+## Relance manuelle séparée
+
+Une relance manuelle existe :
+
+```text
+POST /verrouillage/retry
+```
+
+Elle est séparée de `/verrouillage/executer`.
+
+Elle est protégée par antiforgery et prévue pour être appelée depuis l’interface SERVWEB.
+
+Elle contourne la fenêtre horaire afin de permettre une reprise contrôlée après incident.
+
+## BackgroundService
+
+Le `BackgroundService` est conservé comme filet de sécurité.
+
+Il vérifie périodiquement la fenêtre de verrouillage.
+
+Il ne doit pas être considéré comme le mécanisme principal en production, car IIS peut arrêter ou endormir l’application selon la configuration.
 
 ## Contrôles quotidiens
 
