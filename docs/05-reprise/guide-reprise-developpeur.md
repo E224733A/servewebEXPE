@@ -8,7 +8,7 @@ Il donne les points importants à comprendre avant de modifier le code.
 
 ## Résumé du projet
 
-`servewebEXPE` est une application Web ASP.NET Core MVC utilisée en intranet pour préparer les tournées Expedition.
+`servewebEXPE` est une application Web ASP.NET Core MVC utilisée en intranet pour préparer les tournées Expedition et les commentaires Administration.
 
 Elle possède deux interfaces :
 
@@ -25,6 +25,12 @@ POST /api/expedition/preparations/verrouiller
 GET  /api/health
 ```
 
+URL API centrale actuelle côté SERVWEB :
+
+```text
+https://srvapi1.sli.local/
+```
+
 ## Avant de modifier le code
 
 Lire dans cet ordre :
@@ -36,7 +42,8 @@ Lire dans cet ordre :
 5. `docs/01-api/contrat-json-expedition.md` ;
 6. `docs/02-fonctionnement/verrouillage-planifie-22h35.md` ;
 7. `docs/03-deploiement/servweb-expedition-production.md` ;
-8. `docs/04-exploitation/diagnostic-et-reprise.md`.
+8. `docs/04-exploitation/diagnostic-et-reprise.md` ;
+9. `docs/07-limites/dette-technique-et-ameliorations.md`.
 
 ## Points de code à connaître
 
@@ -46,12 +53,19 @@ Lire dans cet ordre :
 | `Controllers/ExpeditionController.cs` | parcours Expedition, quantités, marquage prêt |
 | `Controllers/AdministrationController.cs` | parcours Administration, commentaires exceptionnels |
 | `Controllers/VerrouillageController.cs` | endpoint local verrouillage, retry, status |
-| `Services/ExpeditionApiClient.cs` | appels HTTP vers API centrale |
+| `Services/ExpeditionApiClient.cs` | appels HTTP vers API centrale réelle |
 | `Services/VerrouillageService.cs` | orchestration du verrouillage |
 | `Data/SqliteExpeditionDraftStore.cs` | stockage local et construction du lot |
 | `Application/Expedition/ExpeditionPreparationValidator.cs` | validation des quantités |
 | `Application/Administration/AdministrationCommentaireValidator.cs` | validation des commentaires |
 | `Application/Common/SharedPreparationViewModelBuilder.cs` | construction commune des vues |
+| `Application/Expedition/ExpeditionPreparationViewModelBuilder.cs` | configuration d’affichage Expedition |
+| `Application/Administration/AdministrationViewModelBuilder.cs` | configuration d’affichage Administration |
+| `Background/ExpeditionStartupService.cs` | initialisation SQLite et purge de démarrage |
+| `Background/VerrouillageBackgroundService.cs` | filet de sécurité du verrouillage planifié |
+| `Options/ExpeditionApiOptions.cs` | configuration API centrale |
+| `Options/VerrouillageOptions.cs` | configuration verrouillage 22h35 |
+| `Options/AccessControlOptions.cs` | sécurité applicative légère |
 
 ## Règles à ne pas casser
 
@@ -60,11 +74,32 @@ Lire dans cet ordre :
 3. Ne pas supprimer le dossier `data` au déploiement.
 4. Ne pas supprimer le dossier `logs` au déploiement.
 5. Ne pas supprimer le dossier `scripts` au déploiement.
-6. Ne pas réutiliser le port 5100 comme URL publique.
+6. Ne pas réutiliser le port `5100` comme URL publique ou endpoint local.
 7. Ne pas activer `UseFakeApi=true` en production.
 8. Ne pas rendre modifiable une tournée verrouillée.
 9. Ne pas mélanger quantités Expedition et commentaires Administration.
 10. Ne pas faire de supervision réseau dans la tâche de maintenance quotidienne.
+11. Ne pas repasser l’API centrale vers une ancienne URL HTTP/IP sans validation explicite.
+12. Ne pas retirer `ROLLS_VIDES` de l’interface Expedition sans décision métier.
+
+## Articles suivis
+
+Côté Expedition :
+
+```text
+ROLLS
+ROLLS_VIDES
+TAPIS
+SACS
+```
+
+Côté Administration :
+
+```text
+ROLLS
+TAPIS
+SACS
+```
 
 ## Build local
 
@@ -83,7 +118,7 @@ Build succeeded
 
 ## Déploiement
 
-Le serveur SERVWEB ne doit pas compiler.
+Le serveur SERVWEB ne doit pas compiler pour les mises à jour courantes.
 
 Procédure :
 
@@ -97,6 +132,14 @@ Voir :
 docs/03-deploiement/servweb-expedition-production.md
 ```
 
+Le script de référence est :
+
+```text
+scriptsdeploy/update-servweb-iis-prod.ps1
+```
+
+Le script `setup-servweb-iis-prod.ps1` reste un script d’installation/rattrapage direct-build, pas le chemin normal de mise à jour.
+
 ## Tests minimum après modification
 
 Après chaque changement de code :
@@ -108,6 +151,7 @@ dotnet build .\src\MobileSLI.Expedition.Web\MobileSLI.Expedition.Web.csproj -c R
 Après déploiement :
 
 ```powershell
+Invoke-WebRequest "https://srvapi1.sli.local/api/health" -UseBasicParsing
 Invoke-WebRequest "http://localhost/preparations/status" -UseBasicParsing
 Invoke-WebRequest "http://expedition.sli.local" -UseBasicParsing
 Invoke-WebRequest "http://admin.sli.local" -UseBasicParsing
@@ -128,7 +172,8 @@ Le projet est fonctionnel et maintenable, mais il reste une dette technique :
 2. `SqliteExpeditionDraftStore` regroupe beaucoup de responsabilités ;
 3. les tests automatisés sont limités ;
 4. le rollback est manuel ;
-5. la supervision externe n’existe pas encore.
+5. la supervision externe n’existe pas encore ;
+6. certains documents racine sont conservés pour historique et ne doivent pas remplacer les documents rangés dans les sous-dossiers numérotés.
 
 ## Améliorations futures conseillées
 
@@ -141,6 +186,8 @@ Priorité 3 : ajouter une supervision externe simple.
 Priorité 4 : ajouter une documentation SQL de diagnostic côté API centrale.
 
 Priorité 5 : formaliser une matrice de tests Web Expedition / Administration.
+
+Priorité 6 : préparer HTTPS SERVWEB dans un lot séparé si l’entreprise valide `https://expedition.sli.local` et `https://admin.sli.local`.
 
 ## Phrase de reprise honnête
 
