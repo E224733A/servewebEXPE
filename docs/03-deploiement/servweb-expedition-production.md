@@ -6,7 +6,7 @@ Ce document décrit la procédure de mise en production du serveur Web Expeditio
 
 Le serveur concerné est le serveur intranet SERVWEB / SRVINTRAWEB1.
 
-La règle retenue est la suivante :
+La règle retenue pour les mises à jour courantes est la suivante :
 
 ```text
 SERVWEB ne compile pas l'application.
@@ -26,11 +26,28 @@ SERVWEB déploie uniquement un artefact Release déjà publié dans Git.
 | DNS Expedition | `http://expedition.sli.local` |
 | DNS Administration | `http://admin.sli.local` |
 | Endpoint local verrouillage | `http://localhost/verrouillage/executer` |
-| API centrale | `http://api.mobilesli.intra:5000/` |
+| API centrale | `https://srvapi1.sli.local/` |
 | Port Web exposé | `80` |
+| Port obsolète | `5100` |
 | Environnement ASP.NET Core | `Production` |
 
-## Principe de déploiement
+## Script de référence
+
+Le script serveur de production courant est :
+
+```text
+scriptsdeploy/update-servweb-iis-prod.ps1
+```
+
+Il déploie l’artefact Git déjà publié.
+
+Le script suivant est conservé comme script d’installation/rattrapage, mais il compile directement sur SERVWEB et ne doit pas être utilisé pour les mises à jour courantes :
+
+```text
+scriptsdeploy/setup-servweb-iis-prod.ps1
+```
+
+## Principe de déploiement courant
 
 Le poste de développement publie l'application en Release dans un artefact Git :
 
@@ -41,13 +58,7 @@ artifacts/servweb/manifest.json
 
 Le serveur SERVWEB récupère ensuite le dépôt Git et déploie cet artefact.
 
-Le script serveur de production est :
-
-```text
-scriptsdeploy/update-servweb-iis-prod.ps1
-```
-
-Ce script :
+Le script `update-servweb-iis-prod.ps1` :
 
 1. synchronise le dépôt local avec `origin/main` ;
 2. supprime les modifications locales du serveur ;
@@ -60,7 +71,7 @@ Ce script :
 9. configure l'URL de l'API centrale ;
 10. donne les droits à l'AppPool sur `data`, `logs` et `scripts` ;
 11. vérifie les bindings IIS ;
-12. supprime les restes du port 5100 ;
+12. supprime les restes du port `5100` ;
 13. redémarre IIS ;
 14. exécute les tests HTTP finaux.
 
@@ -103,12 +114,12 @@ Set-ExecutionPolicy -Scope Process Bypass -Force
 .\scriptsdeploy\update-servweb-iis-prod.ps1
 ```
 
-Le script doit afficher :
+Le script doit afficher notamment :
 
 ```text
 Environnement ASP         : Production
 ASPNETCORE_ENVIRONMENT = Production
-ExpeditionApi__BaseUrl = http://api.mobilesli.intra:5000/
+ExpeditionApi__BaseUrl = https://srvapi1.sli.local/
 ```
 
 ## Vérifications après déploiement
@@ -133,13 +144,26 @@ serverBuild = false
 ```powershell
 Select-String `
   -Path "C:\Services\MobileSLI.Expedition.Web\web.config" `
-  -Pattern "ASPNETCORE_ENVIRONMENT"
+  -Pattern "ASPNETCORE_ENVIRONMENT|ExpeditionApi__BaseUrl"
 ```
 
 Résultat attendu :
 
-```xml
-<environmentVariable name="ASPNETCORE_ENVIRONMENT" value="Production" />
+```text
+ASPNETCORE_ENVIRONMENT = Production
+ExpeditionApi__BaseUrl = https://srvapi1.sli.local/
+```
+
+### Vérifier l’API centrale depuis SERVWEB
+
+```powershell
+Invoke-WebRequest "https://srvapi1.sli.local/api/health" -UseBasicParsing
+```
+
+Résultat attendu :
+
+```text
+StatusCode = 200
 ```
 
 ### Vérifier les endpoints principaux
@@ -169,6 +193,23 @@ Résultat attendu :
 http://admin.sli.local/expedition          -> 302 vers /administration
 http://expedition.sli.local/administration -> 302 vers /expedition
 ```
+
+## Bindings IIS attendus
+
+```text
+*:80:expedition.sli.local
+*:80:admin.sli.local
+*:80:localhost
+```
+
+Commande de vérification :
+
+```powershell
+Import-Module WebAdministration
+Get-WebBinding -Name "MobileSLI.Expedition.Web" | Select-Object protocol, bindingInformation
+```
+
+Le port `5100` ne doit plus être présent.
 
 ## Dossiers conservés au déploiement
 
@@ -289,7 +330,7 @@ Le script de maintenance :
 
 Le contrôle réseau a volontairement été retiré de cette tâche. Des tests HTTP/TCP lancés sous le compte `SYSTEM` ont provoqué des erreurs mémoire instables sur SERVWEB. La supervision applicative reste donc séparée de la maintenance fichiers.
 
-Contrôle manuel du script de maintenance :
+## Contrôle manuel du script de maintenance
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\Services\MobileSLI.Expedition.Web\scripts\maintenance-servweb-runtime.ps1"
@@ -325,6 +366,7 @@ Dernier résultat: 0
 Comme la tâche de maintenance ne fait plus de test réseau, le contrôle applicatif doit être fait séparément :
 
 ```powershell
+Invoke-WebRequest "https://srvapi1.sli.local/api/health" -UseBasicParsing
 Invoke-WebRequest "http://localhost/preparations/status" -UseBasicParsing
 Invoke-WebRequest "http://expedition.sli.local" -UseBasicParsing
 Invoke-WebRequest "http://admin.sli.local" -UseBasicParsing
@@ -424,7 +466,7 @@ cd C:\Sources\servewebEXPE
 
 ## Ce qui est validé
 
-Validé par tests manuels :
+Validé par tests manuels précédents :
 
 ```text
 ASPNETCORE_ENVIRONMENT = Production
@@ -438,7 +480,7 @@ script maintenance manuel = OK
 script maintenance SYSTEM = OK
 ```
 
-Dernier comportement validé :
+Dernier comportement attendu côté maintenance :
 
 ```text
 Controle applicatif reseau ignore dans cette tache pour fiabilite SYSTEM.
@@ -466,10 +508,11 @@ Cette mise en production reste une mise en production intranet pragmatique :
 Le serveur est maintenable si les règles suivantes sont respectées :
 
 1. publier depuis le poste de développement ;
-2. ne pas compiler sur SERVWEB ;
+2. ne pas compiler sur SERVWEB pour les mises à jour courantes ;
 3. déployer avec `update-servweb-iis-prod.ps1` ;
 4. conserver `data`, `logs` et `scripts` ;
 5. vérifier `Production` après chaque déploiement ;
-6. vérifier les tâches Windows ;
-7. contrôler l'application séparément de la maintenance fichiers ;
-8. documenter chaque changement d'exploitation.
+6. vérifier l’API centrale en HTTPS ;
+7. vérifier les tâches Windows ;
+8. contrôler l'application séparément de la maintenance fichiers ;
+9. documenter chaque changement d'exploitation.
