@@ -1,30 +1,47 @@
-Scripts IIS SERVWEB - version corrigee v6
+Scripts IIS SERVWEB - etat courant
 
-Corrections appliquees :
-1. Correction icacls AppPool identity.
-2. Correction web.config sous configuration/location/system.webServer.
-3. Correction PID 4 / System HTTP.sys.
-4. Correction AppPool deja arrete dans Restart-IisSite.
-5. Correction supplementaire update-servweb-iis.ps1 :
-   - suppression du Stop-WebAppPool direct dans le corps principal ;
-   - verification de l'etat de l'AppPool avant tentative d'arret ;
-   - un AppPool deja arrete est maintenant considere normal.
+Statut :
+Ce fichier de synthese remplace l'ancien rappel v6 qui mentionnait encore le port 5100 et l'API HTTP/IP.
 
-Contexte :
-- SERVWEB = 192.168.1.232
-- Port web SERVWEB = 5100
-- API = 192.168.1.233:5000
-- BaseUrl API = http://192.168.1.233:5000/
-- Depot Git = C:\Sources\servewebEXPE
+Procedure de reference pour les mises a jour courantes :
 
-Execution :
-1. Remplacer les anciens scripts dans C:\Sources\servewebEXPE\scriptsdeploy.
-2. Ouvrir PowerShell en administrateur.
-3. Executer :
+    scriptsdeploy\update-servweb-iis-prod.ps1
 
-Set-ExecutionPolicy -Scope Process Bypass -Force
-cd C:\Sources\servewebEXPE
-.\scriptsdeploy\update-servweb-iis.ps1
+Etat cible actuel :
 
-Si besoin de refaire la configuration initiale :
-.\scriptsdeploy\setup-servweb-iis.ps1
+    SERVWEB / SRVINTRAWEB1
+    Site IIS        = MobileSLI.Expedition.Web
+    AppPool IIS     = MobileSLI.Expedition.Web
+    URLs utilisateur = http://expedition.sli.local et http://admin.sli.local
+    Port Web        = 80
+    Endpoint local  = http://localhost/verrouillage/executer
+    API centrale    = https://srvapi1.sli.local/
+    Depot Git       = C:\Sources\servewebEXPE
+    Deploiement     = artefact Release versionne dans Git
+
+Regles importantes :
+
+    - ne pas reutiliser le port 5100 comme solution finale ;
+    - ne pas compiler sur SERVWEB pour les mises a jour courantes ;
+    - conserver C:\Services\MobileSLI.Expedition.Web\data ;
+    - conserver C:\Services\MobileSLI.Expedition.Web\logs ;
+    - conserver C:\Services\MobileSLI.Expedition.Web\scripts ;
+    - verifier ExpeditionApi__BaseUrl = https://srvapi1.sli.local/ apres deploiement.
+
+Commande de deploiement courant sur SERVWEB, en PowerShell administrateur :
+
+    Set-ExecutionPolicy -Scope Process Bypass -Force
+    cd C:\Sources\servewebEXPE
+    .\scriptsdeploy\update-servweb-iis-prod.ps1
+
+Scripts historiques :
+
+    scriptsdeploy\setup-servweb-iis.ps1
+    scriptsdeploy\update-servweb-iis.ps1
+
+Ces scripts historiques peuvent contenir des references anciennes et ne doivent pas remplacer la procedure production actuelle sans verification.
+
+Documentation de reference :
+
+    docs\03-deploiement\servweb-expedition-production.md
+    docs\04-exploitation\diagnostic-et-reprise.md
