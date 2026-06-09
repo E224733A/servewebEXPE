@@ -18,11 +18,12 @@ Elle couvre uniquement l’application Web Expedition / Administration du dépô
 ## Préconditions générales
 
 ```text
-- API centrale disponible.
+- API centrale disponible sur https://srvapi1.sli.local/.
 - SERVWEB démarré en environnement Production pour les tests serveur.
 - Une date métier préparable existe côté API centrale.
 - Les DNS expedition.sli.local et admin.sli.local répondent.
 - Le poste de test a accès au réseau intranet.
+- Le port 5100 n’est pas utilisé comme URL de test finale.
 ```
 
 ## Tests Expedition
@@ -41,6 +42,7 @@ Elle couvre uniquement l’application Web Expedition / Administration du dépô
 | WEB-EXP-010 | Marquer prête | Tournée non verrouillée | Cliquer `Marquer prête` | Statut prêt pour verrouillage | A TESTER |
 | WEB-EXP-011 | Correction après prêt | Tournée prête | Modifier une quantité | Tournée reste prête | A TESTER |
 | WEB-EXP-012 | Tournée verrouillée non modifiable | Tournée verrouillée | Tenter une modification | Modification refusée | A TESTER |
+| WEB-EXP-013 | ROLLS_VIDES côté Expedition | Tournée chargée | Vérifier la présence de l’article `ROLLS_VIDES` | L’article est affiché et saisissable côté Expedition | A TESTER |
 
 ## Tests Administration
 
@@ -53,6 +55,7 @@ Elle couvre uniquement l’application Web Expedition / Administration du dépô
 | WEB-ADM-005 | Saisir commentaire valide | Tournée non verrouillée | Saisir un commentaire court | Sauvegarde acceptée | A TESTER |
 | WEB-ADM-006 | Refuser commentaire trop long | Tournée non verrouillée | Saisir plus de 400 caractères | Erreur affichée, commentaire refusé | A TESTER |
 | WEB-ADM-007 | Tournée verrouillée non modifiable | Tournée verrouillée | Tenter de modifier un commentaire | Modification refusée | A TESTER |
+| WEB-ADM-008 | ROLLS_VIDES absent côté Administration | Tournée chargée | Vérifier les articles affichés | `ROLLS_VIDES` n’est pas affiché côté Administration | A TESTER |
 
 ## Tests routage DNS
 
@@ -67,7 +70,7 @@ Elle couvre uniquement l’application Web Expedition / Administration du dépô
 
 | ID | Scénario | Précondition | Actions | Résultat attendu | Statut |
 |---|---|---|---|---|---|
-| WEB-API-001 | Santé API centrale | SERVWEB connecté au réseau | `Invoke-WebRequest http://api.mobilesli.intra:5000/api/health` | HTTP 200 | A TESTER |
+| WEB-API-001 | Santé API centrale | SERVWEB connecté au réseau | `Invoke-WebRequest https://srvapi1.sli.local/api/health -UseBasicParsing` | HTTP 200 | A TESTER |
 | WEB-API-002 | Test API depuis Expedition | Interface disponible | Cliquer test API Expedition | Message API joignable | A TESTER |
 | WEB-API-003 | Test API depuis Administration | Interface disponible | Cliquer test API Administration | Message API joignable | A TESTER |
 
@@ -79,6 +82,7 @@ Elle couvre uniquement l’application Web Expedition / Administration du dépô
 | WEB-LOCK-002 | Heartbeat verrouillage | Tâche exécutée | Lire `verrouillage-planifie-heartbeat.json` | `codeRetour = 0` après succès | A TESTER |
 | WEB-LOCK-003 | Endpoint local protégé | App active | Appel distant non local | HTTP 403 attendu | A TESTER |
 | WEB-LOCK-004 | Status local | App active | `Invoke-WebRequest http://localhost/preparations/status` | HTTP 200 JSON | A TESTER |
+| WEB-LOCK-005 | Endpoint local sans port 5100 | Déploiement fait | Vérifier `run-verrouillage.ps1` | URL `http://localhost/verrouillage/executer` | A TESTER |
 
 ## Tests maintenance serveur
 
@@ -96,11 +100,14 @@ Elle couvre uniquement l’application Web Expedition / Administration du dépô
 | WEB-DEPLOY-002 | Publication artefact | Build OK | `publish-servweb-artifact.ps1` | ZIP et manifest générés | A TESTER |
 | WEB-DEPLOY-003 | Déploiement SERVWEB | Artefact publié | `update-servweb-iis-prod.ps1` | Sites HTTP 200 | A TESTER |
 | WEB-DEPLOY-004 | Vérifier Production | Déploiement fait | Lire `web.config` | `ASPNETCORE_ENVIRONMENT=Production` | A TESTER |
+| WEB-DEPLOY-005 | Vérifier URL API injectée | Déploiement fait | Lire `web.config` | `ExpeditionApi__BaseUrl=https://srvapi1.sli.local/` | A TESTER |
+| WEB-DEPLOY-006 | Vérifier absence port 5100 | Déploiement fait | Lire bindings IIS | Aucun binding `*:5100:*` | A TESTER |
 
 ## Commandes rapides de campagne
 
 ```powershell
 dotnet build .\src\MobileSLI.Expedition.Web\MobileSLI.Expedition.Web.csproj -c Release
+Invoke-WebRequest "https://srvapi1.sli.local/api/health" -UseBasicParsing
 Invoke-WebRequest "http://localhost/preparations/status" -UseBasicParsing
 Invoke-WebRequest "http://expedition.sli.local" -UseBasicParsing
 Invoke-WebRequest "http://admin.sli.local" -UseBasicParsing
@@ -113,11 +120,11 @@ schtasks /Query /TN "MobileSLI SERVWEB Maintenance quotidienne" /V /FO LIST
 Avant rendu, les scénarios minimum à passer en `OK` sont :
 
 ```text
-WEB-EXP-001 à WEB-EXP-010
-WEB-ADM-001 à WEB-ADM-005
+WEB-EXP-001 à WEB-EXP-013
+WEB-ADM-001 à WEB-ADM-008
 WEB-DNS-001 à WEB-DNS-004
-WEB-API-001
-WEB-LOCK-001 à WEB-LOCK-004
+WEB-API-001 à WEB-API-003
+WEB-LOCK-001 à WEB-LOCK-005
 WEB-MAINT-001 à WEB-MAINT-003
-WEB-DEPLOY-001 à WEB-DEPLOY-004
+WEB-DEPLOY-001 à WEB-DEPLOY-006
 ```
