@@ -45,6 +45,8 @@ docs/
     diagnostic-et-reprise.md
   05-reprise/
     guide-reprise-developpeur.md
+  06-tests/
+    matrice-tests-serveweb.md
   07-limites/
     dette-technique-et-ameliorations.md
   99-archives/
@@ -63,6 +65,7 @@ docs/
 | `03-deploiement/servweb-expedition-production.md` | Mise en production sur SERVWEB |
 | `04-exploitation/diagnostic-et-reprise.md` | Commandes de diagnostic et reprise incident |
 | `05-reprise/guide-reprise-developpeur.md` | Guide pour le développeur suivant |
+| `06-tests/matrice-tests-serveweb.md` | Matrice de tests Web Expedition / Administration |
 | `07-limites/dette-technique-et-ameliorations.md` | Dette technique connue et améliorations futures |
 | `99-archives/correction-verrouillage-developpement-2026-05-21.md` | Note historique conservée pour trace |
 
@@ -94,7 +97,8 @@ Pour reprendre le projet rapidement :
 6. lire `03-deploiement/servweb-expedition-production.md` ;
 7. lire `04-exploitation/diagnostic-et-reprise.md` ;
 8. lire `05-reprise/guide-reprise-developpeur.md` ;
-9. lire `07-limites/dette-technique-et-ameliorations.md`.
+9. lire `06-tests/matrice-tests-serveweb.md` ;
+10. lire `07-limites/dette-technique-et-ameliorations.md`.
 
 ## Règles de maintenance documentaire
 
@@ -102,9 +106,10 @@ Pour reprendre le projet rapidement :
 2. Ranger les documents métier dans `02-fonctionnement`.
 3. Ranger les contrats API dans `01-api`.
 4. Ranger les procédures serveur dans `03-deploiement` ou `04-exploitation`.
-5. Ranger les limites et améliorations futures dans `07-limites`.
-6. Ranger les notes historiques dans `99-archives`.
-7. Mettre à jour cet index quand un document est ajouté, déplacé ou supprimé.
+5. Ranger les matrices de tests dans `06-tests`.
+6. Ranger les limites et améliorations futures dans `07-limites`.
+7. Ranger les notes historiques dans `99-archives`.
+8. Mettre à jour cet index quand un document est ajouté, déplacé ou supprimé.
 
 ## Limite importante
 
