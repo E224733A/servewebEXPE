@@ -14,6 +14,40 @@ GET  /api/health
 
 SERVWEB ne choisit pas la date métier. La date préparable est calculée par l’API centrale.
 
+## Configuration API côté SERVWEB
+
+Configuration applicative :
+
+```text
+ExpeditionApi:BaseUrl = https://srvapi1.sli.local/
+ExpeditionApi:RequireHttps = true
+ExpeditionApi:TimeoutSeconds = 30
+ExpeditionApi:ApiKeyHeaderName = X-Expedition-Api-Key
+```
+
+En développement, `RequireHttps` peut être désactivé par configuration, mais la valeur par défaut actuelle pointe déjà vers HTTPS.
+
+Le client HTTP réel est `Services/ExpeditionApiClient.cs`.
+
+`FakeExpeditionApiClient` reste présent dans le dépôt pour historique/tests isolés, mais il n’est plus enregistré par `Program.cs`.
+
+## Test de santé API
+
+Endpoint :
+
+```http
+GET /api/health
+```
+
+Il est utilisé par :
+
+```text
+POST /expedition/test-api
+POST /administration/test-api
+```
+
+Ces routes ne chargent pas les données métier et ne modifient pas SQLite.
+
 ## Chargement des préparations
 
 Endpoint :
@@ -51,6 +85,27 @@ Structure attendue côté SERVWEB :
   }
 }
 ```
+
+## Articles utilisés par SERVWEB
+
+Côté Expedition, le code affiche et sauvegarde :
+
+```text
+ROLLS
+ROLLS_VIDES
+TAPIS
+SACS
+```
+
+Côté Administration, le code affiche :
+
+```text
+ROLLS
+TAPIS
+SACS
+```
+
+Les commentaires exceptionnels Administration sont séparés des quantités Expedition.
 
 ## Verrouillage des préparations
 
@@ -174,6 +229,17 @@ TECHNICAL_ERROR
 ```
 
 Le retry automatique ne doit pas masquer une erreur métier.
+
+## Clé API optionnelle
+
+Si l’API centrale exige une clé applicative, SERVWEB peut transmettre un en-tête configuré par :
+
+```text
+ExpeditionApi:ApiKeyHeaderName
+ExpeditionApi:ApiKey
+```
+
+Ne jamais stocker une vraie clé dans `appsettings.json` ni dans Git.
 
 ## Documentation liée
 
