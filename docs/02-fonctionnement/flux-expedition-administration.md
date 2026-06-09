@@ -11,6 +11,29 @@ Administration  -> saisie des commentaires exceptionnels
 
 Les deux interfaces utilisent le même chargement API et le même stockage local SQLite.
 
+SERVWEB ne choisit pas la date métier : elle est calculée par l’API centrale.
+
+## URLs utilisateur
+
+```text
+http://expedition.sli.local
+http://admin.sli.local
+```
+
+Routage par host header :
+
+```text
+expedition.sli.local -> /expedition
+admin.sli.local      -> /administration
+```
+
+Les accès croisés sont redirigés :
+
+```text
+http://admin.sli.local/expedition          -> /administration
+http://expedition.sli.local/administration -> /expedition
+```
+
 ## Chargement des données
 
 Routes concernées :
@@ -35,17 +58,44 @@ GET /api/expedition/preparations/a-preparer
 
 La date métier est calculée par l’API centrale. SERVWEB ne transmet pas de paramètre de date.
 
+## Test API sans chargement métier
+
+Les deux interfaces disposent d’un test de santé API :
+
+```text
+POST /expedition/test-api
+POST /administration/test-api
+```
+
+Ces routes appellent uniquement :
+
+```text
+GET /api/health
+```
+
+Elles ne chargent pas les données métier et ne modifient pas SQLite.
+
 ## Interface Expedition
 
 Routes principales :
 
 ```text
 GET  /expedition
+POST /expedition/charger
+POST /expedition/test-api
 GET  /expedition/tournees
 GET  /expedition/tournees/{codeTournee}/preparer
 POST /expedition/tournees/{codeTournee}/preparer
+GET  /expedition/tournees/{codeTournee}/lignes/detail
+POST /expedition/tournees/{codeTournee}/lignes/detail
 GET  /expedition/tournees/{codeTournee}/recapitulatif
 POST /expedition/tournees/{codeTournee}/marquer-pret
+```
+
+Route disponible uniquement en environnement `Development` :
+
+```text
+POST /expedition/developpement/verrouiller-maintenant
 ```
 
 Rôle :
@@ -70,7 +120,8 @@ Règles :
 3. les lignes inconnues sont refusées ;
 4. une tournée verrouillée n’est plus modifiable ;
 5. une tournée déjà prête reste prête si une quantité est corrigée ;
-6. le clic `Marquer prête` enregistre la date de modification métier.
+6. le clic `Marquer prête` enregistre la date de modification métier ;
+7. `ROLLS_VIDES` est bien affiché et préparé côté Expedition.
 
 ## Interface Administration
 
@@ -78,6 +129,8 @@ Routes principales :
 
 ```text
 GET  /administration
+POST /administration/charger
+POST /administration/test-api
 GET  /administration/tournees
 GET  /administration/tournees/{codeTournee}/commentaires
 POST /admin/drafts/commentaires
@@ -97,12 +150,15 @@ TAPIS
 SACS
 ```
 
+`ROLLS_VIDES` n’est pas affiché côté Administration.
+
 Règles :
 
 1. un commentaire est rattaché à une ligne existante ;
 2. un commentaire exceptionnel ne doit pas dépasser 400 caractères ;
-3. une tournée verrouillée n’est plus modifiable ;
-4. les commentaires sont sauvegardés localement jusqu’au verrouillage.
+3. un commentaire vide ou null est accepté ;
+4. une tournée verrouillée n’est plus modifiable ;
+5. les commentaires sont sauvegardés localement jusqu’au verrouillage.
 
 ## Séparation des responsabilités
 
@@ -123,7 +179,9 @@ Route locale appelée par la tâche Windows :
 POST /verrouillage/executer
 ```
 
-Cette route construit un lot avec les tournées prêtes, puis appelle l’API centrale :
+Cette route est réservée aux appels `localhost`.
+
+Elle construit un lot avec les tournées prêtes, puis appelle l’API centrale :
 
 ```text
 POST /api/expedition/preparations/verrouiller
@@ -135,6 +193,20 @@ Une tournée est envoyée si elle est :
 non verrouillée
 et en état PRET_VERROUILLAGE ou PRETE_VERROUILLAGE
 ```
+
+Si aucune tournée n’est prête, aucun POST n’est envoyé à l’API centrale.
+
+## Relance manuelle
+
+Une route de relance existe :
+
+```text
+POST /verrouillage/retry
+```
+
+Elle est séparée de `/verrouillage/executer`.
+
+Elle est appelée depuis l’interface SERVWEB et contourne la fenêtre horaire pour permettre une reprise après erreur réseau ou API.
 
 ## Diagnostic utilisateur
 
@@ -152,5 +224,6 @@ Elle permet de vérifier :
 - nombre de quantités modifiées ;
 - nombre de commentaires modifiés ;
 - dernier statut de verrouillage ;
-- heure attendue du prochain verrouillage.
+- heure attendue du prochain verrouillage ;
+- dernière exécution de la tâche Windows si le heartbeat existe.
 ```
