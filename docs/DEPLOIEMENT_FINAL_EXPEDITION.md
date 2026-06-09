@@ -1,153 +1,133 @@
 # Déploiement final du module web Expédition
 
-## Objectif
+## Statut du document
 
-Ce document décrit le déploiement final de SERVEXPE, l’application web Expédition du projet MobileSLI.
+Ce document racine est conservé pour compatibilité avec les anciennes notes de travail.
 
-La version finale utilise l’API centrale réelle et non le client fake.
-
-Routes métier utilisées :
+La procédure de référence actuelle est :
 
 ```text
-GET  /api/expedition/preparations/a-preparer
-POST /api/expedition/preparations/verrouiller
+docs/03-deploiement/servweb-expedition-production.md
 ```
 
-Verrouillage automatique :
+L’ancienne procédure qui publiait directement vers `C:\Services\MobileSLI.Expedition.Web` et utilisait le port `5100` est obsolète.
+
+## Etat actuel validé
 
 ```text
-Tous les jours à 22h35
+Serveur cible              : SERVWEB / SRVINTRAWEB1
+Application IIS            : MobileSLI.Expedition.Web
+Environnement ASP.NET Core : Production
+Déploiement courant        : artefact Release versionné dans Git
+Script courant             : scriptsdeploy/update-servweb-iis-prod.ps1
+API centrale               : https://srvapi1.sli.local/
+URL Expedition             : http://expedition.sli.local
+URL Administration         : http://admin.sli.local
+Endpoint verrouillage      : http://localhost/verrouillage/executer
+Port Web exposé            : 80
+Port obsolète              : 5100
 ```
 
-## Pré-requis serveur
+## Ce qu’il ne faut plus utiliser
 
-- Windows Server ou poste serveur validé.
-- IIS configuré pour héberger l’application ASP.NET Core.
-- .NET Hosting Bundle ou runtime compatible avec le projet.
-- Accès réseau de SERVEXPE vers l’API centrale.
-- Port SERVEXPE ouvert uniquement pour les postes autorisés.
-- Accès en écriture au dossier de service.
-
-Dossier de service recommandé :
+Ne plus utiliser comme procédure finale :
 
 ```text
-C:\Services\MobileSLI.Expedition.Web
+http://192.168.1.232:5100/
+http://192.168.1.232:5100/expedition
+http://localhost:5100/verrouillage/executer
+http://192.168.1.233:5000/
+ExpeditionApi__RequireHttps = false en production finale
+publication directe dans C:\Services\MobileSLI.Expedition.Web pour les mises à jour courantes
 ```
 
-Dossier source recommandé :
+Ces valeurs ont été remplacées par :
 
 ```text
-C:\Sources\servewebEXPE
+http://expedition.sli.local
+http://admin.sli.local
+http://localhost/verrouillage/executer
+https://srvapi1.sli.local/
 ```
 
-## Variables d’environnement recommandées
+## Procédure de déploiement courante
 
-À adapter selon l’environnement.
-
-```powershell
-[Environment]::SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Production", "Machine")
-[Environment]::SetEnvironmentVariable("ExpeditionApi__BaseUrl", "http://192.168.1.233:5000/", "Machine")
-[Environment]::SetEnvironmentVariable("ExpeditionApi__RequireHttps", "false", "Machine")
-[Environment]::SetEnvironmentVariable("ExpeditionDb__DatabasePath", "C:\Services\MobileSLI.Expedition.Web\data\expedition-drafts.sqlite3", "Machine")
-```
-
-Si l’API centrale exige une clé :
-
-```powershell
-[Environment]::SetEnvironmentVariable("ExpeditionApi__ApiKeyHeaderName", "X-Expedition-Api-Key", "Machine")
-[Environment]::SetEnvironmentVariable("ExpeditionApi__ApiKey", "VALEUR_SECRETE_A_NE_PAS_COMMIT", "Machine")
-```
-
-Si le endpoint local de verrouillage doit utiliser un secret :
-
-```powershell
-[Environment]::SetEnvironmentVariable("Verrouillage__LockSecret", "VALEUR_SECRETE_A_NE_PAS_COMMIT", "Machine")
-[Environment]::SetEnvironmentVariable("SERVEXPE_LOCK_SECRET", "VALEUR_SECRETE_A_NE_PAS_COMMIT", "Machine")
-```
-
-Les deux valeurs doivent être identiques si `Verrouillage__LockSecret` est renseigné.
-
-## Publication applicative
-
-Depuis le dépôt source :
+Sur SERVWEB, en PowerShell administrateur :
 
 ```powershell
 cd C:\Sources\servewebEXPE
-
-git pull
-
-dotnet restore .\MobileSLI.Expedition.sln
-
-dotnet publish .\src\MobileSLI.Expedition.Web\MobileSLI.Expedition.Web.csproj `
-    -c Release `
-    -o C:\Services\MobileSLI.Expedition.Web
+Set-ExecutionPolicy -Scope Process Bypass -Force
+.\scriptsdeploy\update-servweb-iis-prod.ps1
 ```
 
-Créer les dossiers de données et de logs :
+Le serveur ne doit pas compiler l’application pour les mises à jour courantes.
 
-```powershell
-New-Item -ItemType Directory -Force "C:\Services\MobileSLI.Expedition.Web\data" | Out-Null
-New-Item -ItemType Directory -Force "C:\Services\MobileSLI.Expedition.Web\logs" | Out-Null
-New-Item -ItemType Directory -Force "C:\Services\MobileSLI.Expedition.Web\scripts" | Out-Null
-```
-
-Copier le script de verrouillage :
-
-```powershell
-Copy-Item `
-  -Path "C:\Sources\servewebEXPE\scriptsdeploy\run-verrouillage.ps1" `
-  -Destination "C:\Services\MobileSLI.Expedition.Web\scripts\run-verrouillage.ps1" `
-  -Force
-```
-
-Vérifier la présence du script :
-
-```powershell
-Test-Path "C:\Services\MobileSLI.Expedition.Web\scripts\run-verrouillage.ps1"
-```
-
-Résultat attendu :
+Le script déploie l’artefact Git :
 
 ```text
-True
+artifacts/servweb/MobileSLI.Expedition.Web.zip
+artifacts/servweb/manifest.json
 ```
 
-## Installation de la tâche planifiée Windows
+## Variables importantes
 
-Depuis le dépôt source, en PowerShell administrateur :
+La valeur importante injectée par le script est :
+
+```text
+ExpeditionApi__BaseUrl = https://srvapi1.sli.local/
+```
+
+L’environnement doit être :
+
+```text
+ASPNETCORE_ENVIRONMENT = Production
+```
+
+Vérification :
 
 ```powershell
-cd C:\Sources\servewebEXPE
-.\scriptsdeploy\register-verrouillage-task.ps1
+Select-String `
+  -Path "C:\Services\MobileSLI.Expedition.Web\web.config" `
+  -Pattern "ASPNETCORE_ENVIRONMENT|ExpeditionApi__BaseUrl"
 ```
 
-La tâche créée ou mise à jour doit être :
+## Dossiers à conserver
+
+Ne pas supprimer au déploiement :
+
+```text
+C:\Services\MobileSLI.Expedition.Web\data
+C:\Services\MobileSLI.Expedition.Web\logs
+C:\Services\MobileSLI.Expedition.Web\scripts
+```
+
+| Dossier | Contenu |
+|---|---|
+| `data` | SQLite local et payloads de diagnostic |
+| `logs` | logs verrouillage, maintenance, heartbeat |
+| `scripts` | scripts exécutés par les tâches Windows |
+
+## Tâche planifiée Windows
+
+La tâche doit être :
 
 ```text
 MobileSLI SERVEXPE Verrouillage 22h35
 ```
 
-Configuration attendue :
+Elle exécute :
 
 ```text
-Déclenchement : tous les jours à 22:35
-Action        : powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\Services\MobileSLI.Expedition.Web\scripts\run-verrouillage.ps1"
-Comportement  : StartWhenAvailable
-Instances     : IgnoreNew
-Durée max     : 10 minutes
+C:\Services\MobileSLI.Expedition.Web\scripts\run-verrouillage.ps1
 ```
 
-## Contrôle de la tâche planifiée
+Le script appelle :
 
-Lister les tâches de verrouillage :
-
-```powershell
-Get-ScheduledTask |
-    Where-Object { $_.TaskName -like "*Verrouillage*" } |
-    Select-Object TaskName, State
+```text
+http://localhost/verrouillage/executer
 ```
 
-Afficher le prochain déclenchement :
+Contrôle :
 
 ```powershell
 Get-ScheduledTaskInfo -TaskName "MobileSLI SERVEXPE Verrouillage 22h35" |
@@ -172,49 +152,39 @@ Résultat attendu : aucun résultat.
 
 ## Configuration IIS et réseau
 
-L’application doit être disponible sur le serveur en interne, par exemple :
+Bindings attendus :
 
 ```text
-http://192.168.1.232:5100/
+*:80:expedition.sli.local
+*:80:admin.sli.local
+*:80:localhost
 ```
 
-Le endpoint technique suivant doit rester local au serveur :
-
-```text
-http://localhost:5100/verrouillage/executer
-```
-
-Un appel réseau direct depuis un autre poste vers `/verrouillage/executer` doit être refusé.
-
-Test depuis un autre poste :
+Commande :
 
 ```powershell
-curl.exe -i -X POST "http://192.168.1.232:5100/verrouillage/executer" -H "Content-Type: application/json" --data-raw "{}"
+Import-Module WebAdministration
+Get-WebBinding -Name "MobileSLI.Expedition.Web" | Select-Object protocol, bindingInformation
 ```
 
-Résultat attendu :
-
-```text
-HTTP/1.1 403 Forbidden
-Accès refusé : verrouillage planifié réservé à localhost.
-```
+Aucun binding `*:5100:*` ne doit rester.
 
 ## Test fonctionnel de déploiement
 
-1. Ouvrir l’interface SERVEXPE.
+1. Ouvrir `http://expedition.sli.local`.
 2. Cliquer sur `Mode test API`.
 3. Vérifier que l’API centrale répond.
 4. Cliquer sur `Charger les données à préparer`.
 5. Vérifier que la date affichée correspond à la date métier calculée par l’API centrale.
 6. Ouvrir une tournée.
-7. Saisir des quantités ROLLS, TAPIS et SACS.
+7. Saisir des quantités `ROLLS`, `ROLLS_VIDES`, `TAPIS` et `SACS` côté Expedition.
 8. Enregistrer.
 9. Vérifier que les valeurs persistent après redémarrage de l’application.
 10. Marquer la tournée prête pour verrouillage.
 11. Laisser la tâche Windows exécuter le verrouillage à 22h35.
 12. Vérifier le heartbeat.
 13. Vérifier SQL Server côté API centrale.
-14. Vérifier que le mobile lit les données Expédition verrouillées.
+14. Vérifier que le mobile lit les données Expedition verrouillées.
 
 ## Test manuel du script de verrouillage
 
@@ -225,6 +195,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\Services\MobileSLI.E
 ```
 
 À utiliser uniquement pour diagnostic. Le fonctionnement normal reste la tâche planifiée.
+
+Hors fenêtre 22h35-22h55, l’application peut refuser le verrouillage planifié.
 
 ## Logs attendus
 
@@ -250,9 +222,10 @@ Succès attendu :
 
 ```json
 {
-  "date": "2026-05-22T22:35:15.0000000+02:00",
+  "date": "2026-06-04T22:35:15.0000000+02:00",
   "codeRetour": 0,
-  "message": "SUCCESS"
+  "message": "SUCCESS",
+  "url": "http://localhost/verrouillage/executer"
 }
 ```
 
@@ -260,19 +233,22 @@ Succès attendu :
 
 - Ne pas versionner de secret.
 - Restreindre l’accès à l’interface web aux postes autorisés.
-- Ne pas exposer SERVEXPE aux téléphones livreurs.
-- Bloquer `/verrouillage/executer` hors localhost.
+- Ne pas exposer SERVWEB aux téléphones livreurs.
+- Réserver `/verrouillage/executer` à `localhost`.
 - Préférer un filtrage réseau par pare-feu Windows ou IIS.
-- Utiliser HTTPS si le contexte réseau l’exige.
+- Préparer HTTPS SERVWEB dans un lot futur séparé si nécessaire.
+- Ne pas réintroduire le port `5100` comme solution finale.
 
 ## Rollback simple
 
 En cas de problème après publication :
 
-1. Restaurer le dossier précédent de `C:\Services\MobileSLI.Expedition.Web` depuis sauvegarde.
-2. Redémarrer le site IIS.
-3. Vérifier `/expedition`.
-4. Vérifier que la tâche Windows pointe toujours vers le bon script.
-5. Vérifier le dernier heartbeat.
+1. restaurer le dossier précédent de `C:\Services\MobileSLI.Expedition.Web` depuis sauvegarde ;
+2. redémarrer le site IIS ;
+3. vérifier `/preparations/status` ;
+4. vérifier `http://expedition.sli.local` ;
+5. vérifier `http://admin.sli.local` ;
+6. vérifier que la tâche Windows pointe toujours vers le bon script ;
+7. vérifier le dernier heartbeat.
 
 La base SQLite contient les brouillons. Ne pas supprimer le fichier SQLite sans sauvegarde si des préparations non verrouillées sont encore utiles.
