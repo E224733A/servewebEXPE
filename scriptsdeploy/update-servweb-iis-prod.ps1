@@ -531,12 +531,12 @@ function Run-FinalChecks {
     Write-Host "--- Tests finaux ---"
 
     $urls = @(
-        "http://api.mobilesli.intra:5000/api/health",
-        "http://expedition.sli.local",
-        "http://admin.sli.local",
-        "http://admin.sli.local/expedition",
-        "http://expedition.sli.local/administration",
-        "http://localhost/preparations/status"
+    	"$($ApiBaseUrl.TrimEnd('/'))/api/health",
+    	"http://expedition.sli.local",
+    	"http://admin.sli.local",
+    	"http://admin.sli.local/expedition",
+    	"http://expedition.sli.local/administration",
+    	"http://localhost/preparations/status"
     )
 
     foreach ($url in $urls) {
