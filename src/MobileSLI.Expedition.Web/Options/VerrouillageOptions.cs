@@ -4,7 +4,6 @@ namespace MobileSLI.Expedition.Web.Options;
 
 /// <summary>
 /// Paramètres du verrouillage automatique SERVWEB.
-/// Ces valeurs pilotent la fenêtre de traitement de nuit et l'appel de la tâche planifiée.
 /// </summary>
 public sealed class VerrouillageOptions
 {
@@ -22,10 +21,8 @@ public sealed class VerrouillageOptions
     // Fenêtre pendant laquelle le verrouillage automatique est considéré valide.
     public int WindowMinutes { get; set; } = 20;
 
-    // Fréquence de vérification du service hébergé lorsque le verrouillage automatique est actif.
     public int CheckEverySeconds { get; set; } = 60;
 
-    // Séquence ajoutée à l'identifiant du lot pour distinguer les exécutions attendues.
     public string LotSequence { get; set; } = "001";
 
     /// <summary>
