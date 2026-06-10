@@ -51,10 +51,12 @@ public sealed class SqliteExpeditionDraftStore : IExpeditionDraftStore
         await using var connection = CreateConnection();
         await connection.OpenAsync(cancellationToken);
 
+        // Paramètres SQLite importants pour un usage web : attente courte, intégrité référentielle et WAL pour limiter les blocages.
         await ExecuteAsync(connection, "PRAGMA busy_timeout = 5000;", cancellationToken);
         await ExecuteAsync(connection, "PRAGMA foreign_keys = ON;", cancellationToken);
         await ExecuteAsync(connection, "PRAGMA journal_mode = WAL;", cancellationToken);
 
+        // Dernier snapshot API brut, conservé en JSON pour reconstruire les écrans sans rappeler l'API à chaque navigation.
         await ExecuteAsync(connection, """
             CREATE TABLE IF NOT EXISTS Expedition_LoadedData (
                 Id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -69,6 +71,7 @@ public sealed class SqliteExpeditionDraftStore : IExpeditionDraftStore
             ON Expedition_LoadedData(DateTournee);
             """, cancellationToken);
 
+        // État local par tournée : brouillon, prêt verrouillage, verrouillage en cours ou verrouillé.
         await ExecuteAsync(connection, """
             CREATE TABLE IF NOT EXISTS Expedition_TourneeState (
                 DateTournee TEXT NOT NULL,
@@ -81,6 +84,7 @@ public sealed class SqliteExpeditionDraftStore : IExpeditionDraftStore
             );
             """, cancellationToken);
 
+        // Table pivot par ligne Expédition, utilisée comme parent des quantités préparées.
         await ExecuteAsync(connection, """
             CREATE TABLE IF NOT EXISTS Expedition_LineDraft (
                 DateTournee TEXT NOT NULL,
@@ -94,6 +98,7 @@ public sealed class SqliteExpeditionDraftStore : IExpeditionDraftStore
             );
             """, cancellationToken);
 
+        // Quantités préparées côté Expédition, séparées des commentaires Administration.
         await ExecuteAsync(connection, """
             CREATE TABLE IF NOT EXISTS Expedition_LineQuantity (
                 DateTournee TEXT NOT NULL,
@@ -110,6 +115,7 @@ public sealed class SqliteExpeditionDraftStore : IExpeditionDraftStore
             );
             """, cancellationToken);
 
+        // Commentaires exceptionnels saisis dans l'espace Administration.
         await ExecuteAsync(connection, """
             CREATE TABLE IF NOT EXISTS Admin_CommentaireDraft (
                 DateTournee TEXT NOT NULL,
@@ -124,6 +130,7 @@ public sealed class SqliteExpeditionDraftStore : IExpeditionDraftStore
             );
             """, cancellationToken);
 
+        // Historique local des lots envoyés à l'API pour diagnostiquer les succès, rejoues, conflits et échecs.
         await ExecuteAsync(connection, """
             CREATE TABLE IF NOT EXISTS Expedition_LockHistory (
                 IdLotVerrouillage TEXT PRIMARY KEY,
@@ -159,6 +166,7 @@ public sealed class SqliteExpeditionDraftStore : IExpeditionDraftStore
 
             await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
+            // La purge reste strictement locale : elle nettoie les brouillons SERVWEB sans toucher l'API ni SQL Server central.
             await ExecuteAsync(connection, transaction, "DELETE FROM Expedition_LineQuantity WHERE DateTournee < $draftCutoffDate;", cancellationToken, ("$draftCutoffDate", ToDbDate(draftCutoffDate)));
             await ExecuteAsync(connection, transaction, "DELETE FROM Expedition_LineDraft WHERE DateTournee < $draftCutoffDate;", cancellationToken, ("$draftCutoffDate", ToDbDate(draftCutoffDate)));
             await ExecuteAsync(connection, transaction, "DELETE FROM Admin_CommentaireDraft WHERE DateTournee < $draftCutoffDate;", cancellationToken, ("$draftCutoffDate", ToDbDate(draftCutoffDate)));
@@ -180,6 +188,7 @@ public sealed class SqliteExpeditionDraftStore : IExpeditionDraftStore
         }
         catch (Exception ex)
         {
+            // Une purge échouée ne doit pas empêcher les opérateurs de préparer les tournées.
             _logger.LogWarning(ex, "La purge SQLite SERVEXPE a échoué. Le fonctionnement métier continue.");
         }
     }
@@ -193,6 +202,7 @@ public sealed class SqliteExpeditionDraftStore : IExpeditionDraftStore
         await connection.OpenAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
+        // Chaque chargement garde le payload complet ; le dernier Id devient le snapshot courant de l'application.
         await ExecuteAsync(connection, transaction, """
             INSERT INTO Expedition_LoadedData(DateTournee, LoadedAtUtc, PayloadJson)
             VALUES ($dateTournee, $loadedAtUtc, $payloadJson);
@@ -286,6 +296,7 @@ public sealed class SqliteExpeditionDraftStore : IExpeditionDraftStore
         await using var connection = CreateConnection();
         await connection.OpenAsync(cancellationToken);
 
+        // Première passe : initialise les lignes qui ont au moins un brouillon Expédition.
         await using (var command = connection.CreateCommand())
         {
             command.CommandText = """
@@ -312,6 +323,7 @@ public sealed class SqliteExpeditionDraftStore : IExpeditionDraftStore
             }
         }
 
+        // Deuxième passe : ajoute les quantités par article dans les lignes déjà connues ou créées à la volée.
         await using (var command = connection.CreateCommand())
         {
             command.CommandText = """
@@ -337,6 +349,7 @@ public sealed class SqliteExpeditionDraftStore : IExpeditionDraftStore
             }
         }
 
+        // Troisième passe : fusionne les commentaires Administration avec les mêmes LineDraftState.
         await using (var command = connection.CreateCommand())
         {
             command.CommandText = """
@@ -381,6 +394,7 @@ public sealed class SqliteExpeditionDraftStore : IExpeditionDraftStore
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         await EnsureWritableAsync(connection, transaction, dateTournee, codeTournee, cancellationToken);
 
+        // Le statut de tournée est mis à jour avant les lignes pour garder une trace cohérente de la saisie globale.
         await UpsertTourneeStateAsync(
             connection,
             transaction,
@@ -431,6 +445,7 @@ public sealed class SqliteExpeditionDraftStore : IExpeditionDraftStore
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         await EnsureWritableAsync(connection, transaction, dateTournee, codeTournee, cancellationToken);
 
+        // Les commentaires Administration restent dans leur table dédiée afin de ne pas mélanger les rôles des deux interfaces.
         await ExecuteAsync(connection, transaction, """
             INSERT INTO Admin_CommentaireDraft(DateTournee, CodeTournee, IdLigneSource, CommentaireExceptionnel, StatutBrouillon, IsLocked, LastModifiedUtc, LastModifiedByIp)
             VALUES ($dateTournee, $codeTournee, $idLigneSource, $commentaire, 'BROUILLON', 0, $lastModifiedUtc, $ip)
@@ -451,6 +466,7 @@ public sealed class SqliteExpeditionDraftStore : IExpeditionDraftStore
         var load = await GetLastLoadedDataAsync(cancellationToken);
         if (load is null) return null;
 
+        // Id de lot déterministe pour la date, l'heure demandée et la séquence configurée.
         var request = new ExpeditionLockRequest
         {
             SchemaVersion = string.IsNullOrWhiteSpace(load.SchemaVersion) ? "1.2" : load.SchemaVersion,
@@ -476,6 +492,7 @@ public sealed class SqliteExpeditionDraftStore : IExpeditionDraftStore
             var status = tourneeState?.Status ?? tournee.EtatPreparation;
             if (!IsReadyForLockStatus(status)) continue;
 
+            // Date métier du dernier clic prêt : elle est différente de l'heure technique du verrouillage automatique.
             var dateDernierClicPret = tourneeState?.LastModifiedUtc ?? requestedAtLocal;
             var lineStates = await GetLineStatesAsync(load.DateTournee, tournee.CodeTournee, cancellationToken);
             var lineDtos = new List<LigneLockDto>();
@@ -540,6 +557,7 @@ public sealed class SqliteExpeditionDraftStore : IExpeditionDraftStore
         await using var connection = CreateConnection();
         await connection.OpenAsync(cancellationToken);
 
+        // Toutes les tournées du lot doivent être verrouillées pour considérer le verrouillage comme déjà réussi.
         foreach (var codeTournee in codeTournees.Where(code => !string.IsNullOrWhiteSpace(code)))
         {
             await using var command = connection.CreateCommand();
@@ -576,6 +594,7 @@ public sealed class SqliteExpeditionDraftStore : IExpeditionDraftStore
         await connection.OpenAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
+        // L'historique est écrit avant le verrouillage local des tournées pour conserver la réponse API reçue.
         await ExecuteAsync(connection, transaction, """
             INSERT INTO Expedition_LockHistory(IdLotVerrouillage, DateTournee, Status, ApiMessage, PayloadHash, CreatedUtc, ProcessedUtc)
             VALUES ($idLot, $dateTournee, $status, $message, $payloadHash, $createdUtc, $processedUtc)
@@ -688,6 +707,7 @@ public sealed class SqliteExpeditionDraftStore : IExpeditionDraftStore
             snapshot.NombreCommentairesModifies = Convert.ToInt32(await ScalarAsync(connection, "SELECT COUNT(*) FROM Admin_CommentaireDraft WHERE DateTournee = $date AND CommentaireExceptionnel IS NOT NULL AND TRIM(CommentaireExceptionnel) <> ''", cancellationToken, ("$date", ToDbDate(load.DateTournee))) ?? 0);
         }
 
+        // Retard affiché seulement après une marge de 30 minutes, pour éviter une alerte pendant la fenêtre normale de traitement.
         if (expectedLockAtLocal.HasValue && DateTimeOffset.Now > expectedLockAtLocal.Value.AddMinutes(30))
         {
             snapshot.VerrouillageEnRetard = !string.Equals(snapshot.StatutDernierVerrouillage, LotStatuses.Envoye, StringComparison.OrdinalIgnoreCase)
@@ -716,6 +736,7 @@ public sealed class SqliteExpeditionDraftStore : IExpeditionDraftStore
 
     private static async Task EnsureWritableAsync(SqliteConnection connection, System.Data.Common.DbTransaction transaction, DateOnly dateTournee, string codeTournee, CancellationToken cancellationToken)
     {
+        // Blocage global temporaire : pendant un verrouillage en cours, aucune modification n'est acceptée pour éviter un lot incohérent.
         await using (var command = connection.CreateCommand())
         {
             command.Transaction = (SqliteTransaction)transaction;
@@ -736,6 +757,7 @@ public sealed class SqliteExpeditionDraftStore : IExpeditionDraftStore
             }
         }
 
+        // Blocage définitif par tournée : une tournée verrouillée ne doit plus accepter de saisie locale.
         await using (var command = connection.CreateCommand())
         {
             command.Transaction = (SqliteTransaction)transaction;
@@ -768,6 +790,7 @@ public sealed class SqliteExpeditionDraftStore : IExpeditionDraftStore
         bool enregistrerClicPretVerrouillage,
         CancellationToken cancellationToken)
     {
+        // Si la tournée était déjà prête et qu'on modifie seulement une quantité, on conserve l'heure du clic prêt initial.
         var conserverDernierClicPret = IsReadyForLockStatus(status) && !enregistrerClicPretVerrouillage;
 
         await ExecuteAsync(connection, transaction, """
@@ -830,6 +853,7 @@ public sealed class SqliteExpeditionDraftStore : IExpeditionDraftStore
 
     private static List<ArticleSuiviDto> BuildArticlesPrepares(List<ArticleSuiviDto> articles)
     {
+        // Référentiel minimal attendu par le lot de verrouillage, avec priorité aux libellés reçus de l'API.
         var defaults = new[]
         {
             new ArticleSuiviDto { CodeArticle = "ROLLS", LibelleArticle = "Rolls pleins", TypeQuantite = "LIVREE_PREVUE" },
