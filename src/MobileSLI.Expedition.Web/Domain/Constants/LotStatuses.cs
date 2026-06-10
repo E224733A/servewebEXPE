@@ -6,57 +6,58 @@
 namespace MobileSLI.Expedition.Web.Domain.Constants;
 
 /// <summary>
-/// Statuts possibles pour les lots de verrouillage retournés par l'API centrale.
+/// Statuts possibles pour les lots de verrouillage retournés par l'API centrale ou stockés dans l'historique local.
+/// Ne pas renommer ces valeurs sans vérifier le contrat JSON API et les requêtes SQLite associées.
 /// </summary>
 public static class LotStatuses
 {
     /// <summary>
-    /// Lot traité avec succès.
+    /// Lot traité avec succès par l'API centrale.
     /// </summary>
     public const string Success = "SUCCESS";
 
     /// <summary>
-    /// Lot déjà traité.
+    /// Lot déjà traité côté API ; considéré comme un succès fonctionnel pour l'idempotence.
     /// </summary>
     public const string AlreadyProcessed = "ALREADY_PROCESSED";
 
     /// <summary>
-    /// Lot déjà verrouillé.
+    /// Lot ou tournée déjà verrouillé côté API ; considéré comme un état non bloquant pour une relance identique.
     /// </summary>
     public const string AlreadyLocked = "ALREADY_LOCKED";
 
     /// <summary>
-    /// Erreur d'envoi du lot.
+    /// Erreur locale ou distante lors de l'envoi du lot.
     /// </summary>
     public const string ErreurEnvoi = "ERREUR_ENVOI";
 
     /// <summary>
-    /// Lot envoyé avec succès.
+    /// Lot envoyé et accepté, utilisé dans l'historique local de verrouillage.
     /// </summary>
     public const string Envoye = "ENVOYE";
 
     /// <summary>
-    /// Le lot a été rejoué à l'identique.
+    /// Le même contenu de lot a été rejoué sans divergence.
     /// </summary>
     public const string RejoueIdentique = "REJOUE_IDENTIQUE";
 
     /// <summary>
-    /// Erreur technique lors du traitement du lot.
+    /// Erreur technique renvoyée par l'API centrale.
     /// </summary>
     public const string TechnicalError = "TECHNICAL_ERROR";
 
     /// <summary>
-    /// Erreur de validation lors du traitement du lot.
+    /// Erreur de validation renvoyée par l'API centrale.
     /// </summary>
     public const string ValidationError = "VALIDATION_ERROR";
 
     /// <summary>
-    /// Conflit détecté lors du traitement du lot (version anglaise).
+    /// Conflit détecté lors du traitement du lot, valeur anglaise du contrat API.
     /// </summary>
     public const string Conflict = "CONFLICT";
 
     /// <summary>
-    /// Conflit détecté lors du traitement du lot (version française).
+    /// Conflit détecté lors du traitement du lot, valeur française utilisée localement.
     /// </summary>
     public const string Conflit = "CONFLIT";
 }
