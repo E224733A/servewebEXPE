@@ -3,11 +3,17 @@ using MobileSLI.Expedition.Web.ViewModels;
 
 namespace MobileSLI.Expedition.Web.Application.Expedition;
 
+/// <summary>
+/// Validation métier des quantités saisies par l'Expédition avant écriture dans le brouillon SQLite.
+/// Le validator protège contre les lignes/articles hors contrat et contre les quantités négatives.
+/// </summary>
 public static class ExpeditionPreparationValidator
 {
     public static List<string> Validate(PreparationInputModel input, TourneePreparationDto tournee, List<ArticleSuiviDto> articles)
     {
         var errors = new List<string>();
+
+        // Les identifiants acceptés viennent uniquement du dernier chargement API et des articles préparables à l'écran.
         var knownLines = tournee.Lignes.Select(l => l.IdLigneSource).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var knownArticles = articles.Select(a => a.CodeArticle).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
