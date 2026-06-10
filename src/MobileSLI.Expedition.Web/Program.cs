@@ -1,3 +1,15 @@
+/*
+ * Entrée principale du site ServeWeb Expédition.
+ * Configure l'application ASP.NET Core, injecte les services et paramètres de configuration.
+ * Points importants :
+ * - Enregistre les options via IOptions pour l'API centrale, l'accès à SQLite et le verrouillage.
+ * - Sépare l'interface de préparation (“expédition”) et l'interface d’administration via le routage DNS.
+ * - Implique des règles de sécurité : redirection HTTPS, en-têtes HTTP stricts, filtrage léger d’IP/UA basé sur les options AccessControl.
+ * - Valide la configuration au démarrage pour éviter des mauvaises valeurs (URL API, obligations HTTPS, liste blanche d’IP).
+ * - Ajoute des services de fond (startup, verrouillage) pour initialiser la base locale et lancer des verrouillages planifiés.
+ * Ce fichier ne contient aucun code métier ; toute logique métier doit résider dans des services ou contrôleurs.
+ */
+
 using Microsoft.Extensions.Options;
 using MobileSLI.Expedition.Web.Application.Common;
 using MobileSLI.Expedition.Web.Application.Administration;
