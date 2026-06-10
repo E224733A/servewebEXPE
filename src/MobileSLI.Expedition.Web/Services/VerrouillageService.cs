@@ -1,3 +1,16 @@
+/*
+ * Service orchestrateur du verrouillage (envoi de lots de préparations) vers l'API centrale.
+ * Responsabilités :
+ * - Garantir qu'un seul verrouillage s'exécute à la fois via un SemaphoreSlim.
+ * - Vérifier que l'appel a lieu dans la fenêtre horaire autorisée (options VerrouillageOptions) ou le bypass explicite.
+ * - Construire un lot de verrouillage à partir du stockage local, prendre en compte les cas où aucune tournée n'est prête ou déjà verrouillée, et calculer le hash du payload.
+ * - Appeler l'API centrale via _apiClient.VerrouillerAsync et enregistrer le succès ou l'échec dans le stockage local selon les statuts de succès et codes d'erreur.
+ * - Implémenter un retry automatique avec délai si l'envoi échoue pour des raisons techniques hors conflit/validation.
+ * - Sauvegarder le payload JSON dans un fichier pour faciliter le diagnostic.
+ * - Gérer des exceptions d'API et techniques en distinguant les conflits/erreurs de validation.
+ * Ce service contient la logique métier pour l'orchestration du verrouillage et doit rester indépendant de la couche UI.
+ */
+
 using System.Text.Json;
 using Microsoft.Extensions.Options;
 using MobileSLI.Expedition.Web.Data;
@@ -180,8 +193,8 @@ public sealed class VerrouillageService
             return VerrouillageRunResult.Failed(
                 $"API centrale ({ex.StatusCode}) : {ex.Message}",
                 isConflictOrValidationError: status.Contains("CONFLICT", StringComparison.OrdinalIgnoreCase)
-                                           || status.Contains("VALIDATION", StringComparison.OrdinalIgnoreCase)
-                                           || status.Contains("DATE_TOURNEE_EXPIREE", StringComparison.OrdinalIgnoreCase));
+                                            || status.Contains("VALIDATION", StringComparison.OrdinalIgnoreCase)
+                                            || status.Contains("DATE_TOURNEE_EXPIREE", StringComparison.OrdinalIgnoreCase));
         }
         catch (Exception ex)
         {
