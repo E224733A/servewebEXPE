@@ -1,8 +1,7 @@
 namespace MobileSLI.Expedition.Web.Options;
 
 /// <summary>
-/// Options de filtrage applicatif de l'interface SERVWEB.
-/// Elles complètent IIS et le pare-feu, mais ne doivent pas être considérées comme l'unique barrière réseau.
+/// Filtrage applicatif SERVWEB complémentaire à IIS et au pare-feu.
 /// </summary>
 public sealed class AccessControlOptions
 {
@@ -10,17 +9,14 @@ public sealed class AccessControlOptions
 
     public bool Enabled { get; set; } = true;
 
-    // Exige HTTPS côté application lorsque l'environnement cible doit être servi en TLS.
     public bool RequireHttps { get; set; } = true;
 
-    // Protection simple contre l'usage direct depuis mobile : l'application mobile doit parler à l'API, pas à SERVWEB.
+    // L'application mobile doit parler à l'API centrale, pas à SERVWEB.
     public bool BlockMobileUserAgents { get; set; } = true;
 
-    // Désactivé par défaut pour éviter de bloquer une installation si les préfixes IP n'ont pas été renseignés.
+    // Désactivé par défaut pour éviter de bloquer une installation sans préfixes IP validés.
     public bool RequireIpAllowListInProduction { get; set; } = false;
 
-    // Filtrage applicatif léger uniquement.
-    // Le vrai filtrage réseau doit être fait au pare-feu Windows / IIS.
-    // Laisser vide si le filtrage IP n'est pas utilisé.
+    // Filtrage applicatif léger uniquement ; le vrai filtrage réseau doit rester côté pare-feu Windows / IIS.
     public List<string> AllowedIpPrefixes { get; set; } = [];
 }
