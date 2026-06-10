@@ -1,3 +1,11 @@
+/*
+ * Service d'arrière-plan de secours pour le verrouillage des lots.
+ * Son rôle est de déclencher périodiquement le VerrouillageService lorsqu'il est activé par configuration.
+ * Il constitue un filet de sécurité : le déclencheur principal du verrouillage reste une tâche Windows planifiée à 22:35.
+ * Fonctionnement : boucle asynchrone avec PeriodicTimer, intervalle configurable via VerrouillageOptions.CheckEverySeconds, ignore l'appel si désactivé.
+ * La méthode CheckAndRunAsync crée un scope de service et appelle VerrouillageService.TryRunAsync avec l'horodatage courant et la séquence de lot configurée.
+ */
+
 using Microsoft.Extensions.Options;
 using MobileSLI.Expedition.Web.Options;
 using MobileSLI.Expedition.Web.Services;
