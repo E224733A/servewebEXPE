@@ -1,3 +1,15 @@
+/*
+ * Client HTTP chargé de communiquer avec l'API centrale Expédition.
+ * Principales responsabilités :
+ * - Initialiser HttpClient avec BaseUrl, délai d'attente, en-têtes accept JSON, User-Agent, et éventuellement clé API.
+ * - Exposer des méthodes pour charger les préparations, verrouiller un lot et tester la santé de l'API.
+ * - Sérialiser/désérialiser les DTO JSON avec les options par défaut (JsonDefaults) et lever ExpeditionApiException en cas d'erreur.
+ * - Gérer la construction de messages d’erreur à partir du corps de réponse (TryReadApiError et BuildApiErrorMessage).
+ * - Noter les règles métier : un verrouillage doit retourner statut SUCCESS sinon lever exception; le chargement ne doit pas renvoyer null.
+ * - Journalise les informations sur les réponses afin d'aider au suivi et au diagnostic.
+ * Aucune logique métier ne doit être ajoutée ici, uniquement l'orchestration d'appels HTTP et des validations génériques.
+ */
+
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
