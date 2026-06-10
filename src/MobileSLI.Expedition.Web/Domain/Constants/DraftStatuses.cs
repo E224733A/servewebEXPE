@@ -6,42 +6,43 @@
 namespace MobileSLI.Expedition.Web.Domain.Constants;
 
 /// <summary>
-/// Statuts possibles pour les brouillons de préparation expédition.
+/// Statuts possibles pour les brouillons de préparation Expédition.
+/// Attention : ces constantes sont des valeurs de contrat avec l'API et le stockage local SQLite.
 /// </summary>
 public static class DraftStatuses
 {
     /// <summary>
-    /// Le brouillon n'est pas encore préparé.
+    /// Brouillon local saisi mais pas encore marqué prêt pour le verrouillage automatique.
     /// </summary>
     public const string Brouillon = "BROUILLON";
 
     /// <summary>
-    /// Le brouillon est en préparation côté web.
+    /// Préparation web en cours, avant validation finale par l'opérateur.
     /// </summary>
     public const string EnPreparationWeb = "EN_PREPARATION_WEB";
 
     /// <summary>
-    /// Le brouillon est marqué prêt pour verrouillage (masculin).
+    /// Statut historique masculin accepté par le web pour reconnaître une tournée prête au verrouillage.
     /// </summary>
     public const string PretVerrouillage = "PRET_VERROUILLAGE";
 
     /// <summary>
-    /// Le brouillon est marqué prête pour verrouillage (féminin).
+    /// Statut API attendu pour une tournée prête au verrouillage automatique.
     /// </summary>
     public const string PreteVerrouillage = "PRETE_VERROUILLAGE";
 
     /// <summary>
-    /// Le verrouillage est en cours.
+    /// Verrouillage temporairement en cours ; les modifications locales doivent être bloquées pendant cet état.
     /// </summary>
     public const string VerrouillageEnCours = "VERROUILLAGE_EN_COURS";
 
     /// <summary>
-    /// La tournée est verrouillée.
+    /// Tournée verrouillée après succès API ; elle ne doit plus être modifiable côté web.
     /// </summary>
     public const string Verrouille = "VERROUILLE";
 
     /// <summary>
-    /// Le verrouillage a retourné une erreur d'envoi.
+    /// État local utilisé lorsqu'un verrouillage n'a pas pu être envoyé ou confirmé.
     /// </summary>
     public const string ErreurEnvoi = "ERREUR_ENVOI";
 }
