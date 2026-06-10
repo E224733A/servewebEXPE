@@ -5,17 +5,17 @@ using MobileSLI.Expedition.Web.Domain.Constants;
 namespace MobileSLI.Expedition.Web.Domain.Rules;
 
 /// <summary>
-/// Centralises simple business rules used by the Expedition feature.
+/// Règles métier simples partagées par plusieurs couches Expédition.
+/// Cette classe évite de dupliquer les comparaisons de statuts dans les contrôleurs, builders et services.
 /// </summary>
 public static class ExpeditionRules
 {
     /// <summary>
-    /// Determines whether a draft status is considered ready for lock. A status is ready
-    /// for lock when it equals <see cref="DraftStatuses.PretVerrouillage"/> or
-    /// <see cref="DraftStatuses.PreteVerrouillage"/>, ignoring case and leading/trailing whitespace.
+    /// Détermine si un statut de brouillon rend une tournée éligible au verrouillage automatique.
+    /// Les deux variantes PRET_VERROUILLAGE et PRETE_VERROUILLAGE sont acceptées pour compatibilité.
     /// </summary>
-    /// <param name="status">The status string to evaluate.</param>
-    /// <returns><c>true</c> if the status is ready for lock; otherwise <c>false</c>.</returns>
+    /// <param name="status">Statut à évaluer.</param>
+    /// <returns><c>true</c> si le statut indique une tournée prête pour verrouillage ; sinon <c>false</c>.</returns>
     public static bool IsReadyForLockStatus(string? status)
     {
         var normalized = status?.Trim().ToUpperInvariant();
@@ -23,12 +23,10 @@ public static class ExpeditionRules
     }
 
     /// <summary>
-    /// Determines whether a draft status is considered in preparation. A status is in preparation
-    /// when it equals <see cref="DraftStatuses.EnPreparationWeb"/> or <see cref="DraftStatuses.Brouillon"/>,
-    /// ignoring case and leading/trailing whitespace.
+    /// Détermine si un statut correspond à une préparation encore modifiable côté web.
     /// </summary>
-    /// <param name="status">The status string to evaluate.</param>
-    /// <returns><c>true</c> if the status indicates an in‑progress preparation; otherwise <c>false</c>.</returns>
+    /// <param name="status">Statut à évaluer.</param>
+    /// <returns><c>true</c> si le statut correspond à une préparation en cours ; sinon <c>false</c>.</returns>
     public static bool IsInPreparationStatus(string? status)
     {
         var normalized = status?.Trim().ToUpperInvariant();
@@ -36,8 +34,8 @@ public static class ExpeditionRules
     }
 
     /// <summary>
-    /// List of lot statuses that represent success outcomes. This set is used when evaluating
-    /// responses from the central API. It is case‑insensitive.
+    /// Statuts de lot considérés comme des succès fonctionnels lors de l'interprétation de la réponse API.
+    /// Les rejoues et états déjà traités sont inclus pour supporter l'idempotence du verrouillage.
     /// </summary>
     public static readonly ISet<string> SuccessLotStatuses = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
