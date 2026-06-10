@@ -7,17 +7,17 @@ namespace MobileSLI.Expedition.Web.Domain.Constants;
 
 /// <summary>
 /// Codes articles suivis par l'application Expédition.
-/// Ces constantes permettent d'éviter la duplication de chaînes magiques.
+/// Ces valeurs sont utilisées dans les écrans, les brouillons SQLite et le lot envoyé à l'API centrale.
 /// </summary>
 public static class ArticleCodes
 {
     /// <summary>
-    /// Code article pour les chariots.
+    /// Code article pour les chariots pleins.
     /// </summary>
     public const string Rolls = "ROLLS";
 
     /// <summary>
-    /// Code article pour les chariots vides.
+    /// Code article pour les chariots vides, explicitement conservé dans le contrat Expédition.
     /// </summary>
     public const string RollsVides = "ROLLS_VIDES";
 
