@@ -8,6 +8,11 @@ using DomainLotStatuses = MobileSLI.Expedition.Web.Domain.Constants.LotStatuses;
 
 namespace MobileSLI.Expedition.Web.Controllers;
 
+/// <summary>
+/// Contrôleur HTTP de l'espace Administration.
+/// Cet espace utilise le même chargement métier que l'Expédition, mais il est limité à la consultation
+/// des tournées et à la saisie des commentaires exceptionnels.
+/// </summary>
 public sealed class AdministrationController : Controller
 {
     private readonly IExpeditionApiClient _apiClient;
@@ -40,6 +45,7 @@ public sealed class AdministrationController : Controller
     {
         try
         {
+            // L'Administration recharge le même lot API que l'Expédition pour travailler sur un référentiel commun.
             var response = await _apiClient.GetPreparationsAsync(cancellationToken);
             if (!string.Equals(response.Statut, DomainLotStatuses.Success, StringComparison.OrdinalIgnoreCase))
             {
@@ -47,6 +53,7 @@ public sealed class AdministrationController : Controller
                 return RedirectToAction(nameof(Index));
             }
 
+            // La sauvegarde locale remplace le dernier snapshot afin que les commentaires soient saisis sur les données courantes.
             await _draftStore.SaveLoadedDataAsync(response, cancellationToken);
             TempData["Success"] = $"Données Administration chargées pour le {response.DateTournee:dd/MM/yyyy}.";
             return RedirectToAction(nameof(Tournees));
@@ -65,6 +72,7 @@ public sealed class AdministrationController : Controller
     {
         try
         {
+            // Test réseau sans effet de bord métier : il ne recharge pas les tournées et n'écrase aucun brouillon.
             var ok = await _apiClient.TesterApiAsync(cancellationToken);
             TempData[ok ? "Success" : "Error"] = ok
                 ? "Mode test API : API joignable. Aucun chargement métier n'a été effectué."
@@ -82,6 +90,7 @@ public sealed class AdministrationController : Controller
     [HttpGet("/administration/tournees")]
     public async Task<IActionResult> Tournees(CancellationToken cancellationToken)
     {
+        // La liste Administration est construite depuis le dernier chargement SQLite, comme côté Expédition.
         var model = await _viewModelBuilder.BuildTourneesIndexAsync(cancellationToken);
         if (model is null)
         {
@@ -109,6 +118,7 @@ public sealed class AdministrationController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> EnregistrerCommentaire(string codeTournee, AdminCommentaireInputModel input, CancellationToken cancellationToken)
     {
+        // Les commentaires Administration sont rattachés au dernier lot chargé localement.
         var load = await _draftStore.GetLastLoadedDataAsync(cancellationToken);
         var tournee = load?.Tournees.FirstOrDefault(t => string.Equals(t.CodeTournee, codeTournee, StringComparison.OrdinalIgnoreCase));
         if (load is null || tournee is null)
@@ -117,6 +127,7 @@ public sealed class AdministrationController : Controller
             return RedirectToAction(nameof(Index));
         }
 
+        // Même règle que l'Expédition : une tournée verrouillée n'accepte plus de modification locale.
         var state = await _draftStore.GetTourneeStateAsync(load.DateTournee, codeTournee, cancellationToken);
         if (tournee.EstVerrouilleeBd || state?.IsLocked == true)
         {
@@ -124,6 +135,7 @@ public sealed class AdministrationController : Controller
             return RedirectToAction(nameof(Commentaires), new { codeTournee });
         }
 
+        // Le validator Administration protège le contrat commentaire sans mélanger les règles de quantité Expédition.
         var validation = AdministrationCommentaireValidator.Validate(input, tournee);
         if (!validation.IsValid)
         {
@@ -133,6 +145,7 @@ public sealed class AdministrationController : Controller
 
         try
         {
+            // La sauvegarde trace l'adresse IP pour garder une origine de modification côté poste web.
             await _draftStore.SaveAdminCommentaireAsync(
                 load.DateTournee,
                 codeTournee,
