@@ -5,6 +5,11 @@ using DomainDraftStatuses = MobileSLI.Expedition.Web.Domain.Constants.DraftStatu
 
 namespace MobileSLI.Expedition.Web.Application.Common;
 
+/// <summary>
+/// Builder commun aux écrans Expédition et Administration.
+/// Il transforme le dernier chargement SQLite et les brouillons locaux en ViewModels Razor,
+/// pendant que les adaptateurs métier décident des articles et champs propres à chaque espace.
+/// </summary>
 public sealed class SharedPreparationViewModelBuilder
 {
     private readonly IExpeditionDraftStore _draftStore;
@@ -36,6 +41,7 @@ public sealed class SharedPreparationViewModelBuilder
             return null;
         }
 
+        // Les états locaux complètent le snapshot API : brouillon, prêt verrouillage ou verrouillé côté web.
         var states = await _draftStore.GetTourneeStatesAsync(load.DateTournee, cancellationToken);
 
         return new TourneesIndexViewModel
@@ -90,6 +96,7 @@ public sealed class SharedPreparationViewModelBuilder
         List<ArticleSuiviDto> loadedArticles,
         IReadOnlyList<ArticleSuiviDto> defaultArticles)
     {
+        // On respecte le référentiel API quand il contient l'article attendu ; sinon on garde l'article par défaut de l'écran.
         return defaultArticles
             .Select(defaultArticle =>
                 loadedArticles.FirstOrDefault(a => string.Equals(a.CodeArticle, defaultArticle.CodeArticle, StringComparison.OrdinalIgnoreCase))
@@ -109,6 +116,7 @@ public sealed class SharedPreparationViewModelBuilder
 
             foreach (var quantite in inputLine.Quantites.Where(q => !string.IsNullOrWhiteSpace(q.CodeArticle)))
             {
+                // Après une erreur de validation, l'écran doit réafficher les valeurs saisies et non l'ancien brouillon.
                 ligne.Quantites[quantite.CodeArticle] = quantite.QuantiteLivreePrevue;
             }
         }
@@ -164,6 +172,7 @@ public sealed class SharedPreparationViewModelBuilder
 
         foreach (var article in articles)
         {
+            // Priorité au brouillon local ; à défaut, on reprend les quantités initiales reçues de l'API.
             quantites[article.CodeArticle] = lineState is not null && lineState.Quantites.TryGetValue(article.CodeArticle, out var stored)
                 ? stored
                 : ligne.BrouillonInitial.Quantites.FirstOrDefault(q => string.Equals(q.CodeArticle, article.CodeArticle, StringComparison.OrdinalIgnoreCase))?.QuantiteLivreePrevue;
@@ -187,6 +196,7 @@ public sealed class SharedPreparationViewModelBuilder
 
     private static ArticleSuiviDto CloneArticle(ArticleSuiviDto article)
     {
+        // Clone défensif pour éviter qu'un article par défaut partagé soit modifié par un ViewModel consommateur.
         return new ArticleSuiviDto
         {
             CodeArticle = article.CodeArticle,
