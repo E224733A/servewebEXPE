@@ -2,22 +2,30 @@ using MobileSLI.Expedition.Web.Domain.Constants;
 
 namespace MobileSLI.Expedition.Web.Options;
 
+/// <summary>
+/// Paramètres du verrouillage automatique SERVWEB.
+/// Ces valeurs pilotent la fenêtre de traitement de nuit et l'appel de la tâche planifiée.
+/// </summary>
 public sealed class VerrouillageOptions
 {
     public const string SectionName = "Verrouillage";
 
     public bool Enabled { get; set; } = true;
 
+    // Fuseau métier utilisé pour calculer l'heure attendue du verrouillage, indépendamment de l'UTC technique.
     public string TimeZoneId { get; set; } = FuseauxHoraires.EuropeParis;
 
     public int Hour { get; set; } = 22;
 
     public int Minute { get; set; } = 35;
 
+    // Fenêtre pendant laquelle le verrouillage automatique est considéré valide.
     public int WindowMinutes { get; set; } = 20;
 
+    // Fréquence de vérification du service hébergé lorsque le verrouillage automatique est actif.
     public int CheckEverySeconds { get; set; } = 60;
 
+    // Séquence ajoutée à l'identifiant du lot pour distinguer les exécutions attendues.
     public string LotSequence { get; set; } = "001";
 
     /// <summary>
