@@ -3,12 +3,18 @@ using MobileSLI.Expedition.Web.ViewModels;
 
 namespace MobileSLI.Expedition.Web.Application.Administration;
 
+/// <summary>
+/// Validation métier des commentaires saisis dans l'espace Administration.
+/// Elle vérifie que la ligne appartient bien à la tournée chargée et limite la taille du commentaire.
+/// </summary>
 public static class AdministrationCommentaireValidator
 {
+    // Limite applicative alignée avec l'usage attendu côté interface pour éviter les commentaires trop longs en brouillon.
     public const int CommentaireExceptionnelMaxLength = 400;
 
     public static AdministrationCommentaireValidationResult Validate(AdminCommentaireInputModel input, TourneePreparationDto tournee)
     {
+        // Le commentaire doit toujours être rattaché à une ligne issue du dernier chargement API.
         if (string.IsNullOrWhiteSpace(input.IdLigneSource)
             || !tournee.Lignes.Any(l => string.Equals(l.IdLigneSource, input.IdLigneSource, StringComparison.OrdinalIgnoreCase)))
         {
