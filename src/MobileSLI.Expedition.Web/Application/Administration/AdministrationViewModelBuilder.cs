@@ -5,8 +5,13 @@ using DomainArticleCodes = MobileSLI.Expedition.Web.Domain.Constants.ArticleCode
 
 namespace MobileSLI.Expedition.Web.Application.Administration;
 
+/// <summary>
+/// Adaptateur Administration autour du builder partagé.
+/// Il réutilise les tournées chargées par l'API, mais applique les règles d'affichage propres aux commentaires.
+/// </summary>
 public sealed class AdministrationViewModelBuilder
 {
+    // Référentiel Administration par défaut : il reste séparé de celui d'Expédition pour préserver le comportement existant.
     private static readonly IReadOnlyList<ArticleSuiviDto> DefaultArticles =
     [
         new ArticleSuiviDto { CodeArticle = DomainArticleCodes.Rolls, LibelleArticle = "Rolls pleins", TypeQuantite = "LIVREE_PREVUE" },
@@ -16,6 +21,7 @@ public sealed class AdministrationViewModelBuilder
 
     private static readonly PreparationViewModelBuildOptions BuildOptions = new()
     {
+        // En mode Administration, les quantités sont consultées mais la saisie porte sur les commentaires exceptionnels.
         IsAdministrationMode = true,
         DefaultArticles = DefaultArticles,
         ResolveCommentaireExceptionnel = (lineState, ligne) => lineState?.CommentaireExceptionnel ?? ligne.BrouillonInitial.CommentaireExceptionnel,
