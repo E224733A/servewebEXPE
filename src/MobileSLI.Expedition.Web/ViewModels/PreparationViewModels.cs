@@ -3,6 +3,10 @@ using MobileSLI.Expedition.Web.Models;
 
 namespace MobileSLI.Expedition.Web.ViewModels;
 
+/// <summary>
+/// ViewModel principal des écrans de préparation d'une tournée.
+/// Il est partagé entre Expédition et Administration, avec un mode d'affichage piloté par IsAdministrationMode.
+/// </summary>
 public sealed class PreparationTourneeViewModel
 {
     public DateOnly DateTournee { get; set; }
@@ -32,6 +36,9 @@ public sealed class PreparationTourneeViewModel
     public int NombreQuantitesRenseignees => Lignes.Sum(l => l.Quantites.Count(q => q.Value.HasValue));
 }
 
+/// <summary>
+/// Ligne affichée dans une tournée préparable, avec les informations client, PDL, commentaire et quantités.
+/// </summary>
 public sealed class PreparationLigneViewModel
 {
     public string IdLigneSource { get; set; } = string.Empty;
@@ -60,9 +67,14 @@ public sealed class PreparationLigneViewModel
 
     public Dictionary<string, int?> Quantites { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
+    // Indicateur d'affichage : une ligne est considérée modifiée si une quantité ou un commentaire local existe.
     public bool EstModifiee => DerniereModificationUtc.HasValue || !string.IsNullOrWhiteSpace(CommentaireExceptionnel) || Quantites.Any(q => q.Value.HasValue);
 }
 
+/// <summary>
+/// Modèle de formulaire de préparation complète d'une tournée.
+/// ActionType permet de distinguer l'enregistrement simple de la redirection vers le récapitulatif.
+/// </summary>
 public sealed class PreparationInputModel
 {
     public string ActionType { get; set; } = "save";
@@ -70,6 +82,9 @@ public sealed class PreparationInputModel
     public List<PreparationLigneInputModel> Lignes { get; set; } = [];
 }
 
+/// <summary>
+/// Modèle de formulaire pour une ligne de préparation Expédition.
+/// </summary>
 public sealed class PreparationLigneInputModel
 {
     public string IdLigneSource { get; set; } = string.Empty;
@@ -77,6 +92,9 @@ public sealed class PreparationLigneInputModel
     public List<PreparationQuantiteInputModel> Quantites { get; set; } = [];
 }
 
+/// <summary>
+/// Quantité saisie côté Expédition pour un article préparé.
+/// </summary>
 public sealed class PreparationQuantiteInputModel
 {
     public string CodeArticle { get; set; } = string.Empty;
@@ -84,6 +102,9 @@ public sealed class PreparationQuantiteInputModel
     public int? QuantiteLivreePrevue { get; set; }
 }
 
+/// <summary>
+/// Modèle de formulaire Administration pour le commentaire exceptionnel d'une ligne.
+/// </summary>
 public sealed class AdminCommentaireInputModel
 {
     public string IdLigneSource { get; set; } = string.Empty;
