@@ -3,27 +3,29 @@ using DomainFuseauxHoraires = MobileSLI.Expedition.Web.Domain.Constants.FuseauxH
 namespace MobileSLI.Expedition.Web.ViewModels;
 
 /// <summary>
-/// View model used on the expedition tournées index page. Centralises default values
-/// for properties to avoid scattering magic strings across the application.
+/// ViewModel de la page listant les tournées chargées pour une date métier.
+/// Il centralise les informations nécessaires au choix d'une tournée à préparer ou à consulter.
 /// </summary>
 public sealed class TourneesIndexViewModel
 {
     public DateOnly DateTournee { get; set; }
 
-    // Default business timezone is Europe/Paris. The constant is centralised to avoid
-    // repeating the literal string across multiple models and options.
+    // Le fuseau métier reste affiché pour diagnostiquer les écarts entre date serveur, date API et date de tournée.
     public string FuseauHoraireMetier { get; set; } = DomainFuseauxHoraires.EuropeParis;
 
     public List<TourneeListItemViewModel> Tournees { get; set; } = [];
 }
 
+/// <summary>
+/// Élément résumé d'une tournée dans la liste principale.
+/// </summary>
 public sealed class TourneeListItemViewModel
 {
     public string CodeTournee { get; set; } = string.Empty;
 
     public string LibelleTournee { get; set; } = string.Empty;
 
-    // Non-prepared state uses the literal value, as this status is not part of expedition draft statuses.
+    // État par défaut avant modification locale ou retour de verrouillage.
     public string EtatPreparation { get; set; } = "NON_PREPAREE";
 
     public bool IsLocked { get; set; }
