@@ -13,6 +13,11 @@ using MobileSLI.Expedition.Web.Domain.Rules;
 
 namespace MobileSLI.Expedition.Web.Controllers;
 
+/// <summary>
+/// Contrôleur HTTP de l'espace Expédition.
+/// Il orchestre les écrans Razor, la récupération API et la sauvegarde locale des brouillons,
+/// sans porter directement les règles SQL ni les règles de verrouillage automatique.
+/// </summary>
 public sealed class ExpeditionController : Controller
 {
     private readonly IExpeditionApiClient _apiClient;
@@ -46,6 +51,7 @@ public sealed class ExpeditionController : Controller
     {
         var host = Request.Host.Host;
 
+        // Même application IIS pour Expédition et Administration : le nom DNS reçu décide de l'espace affiché.
         if (host.Equals("admin.sli.local", StringComparison.OrdinalIgnoreCase))
         {
             return Redirect("/administration");
@@ -67,6 +73,7 @@ public sealed class ExpeditionController : Controller
     {
         try
         {
+            // L'API centrale reste la source des tournées à préparer ; le web ne fabrique pas de tournée localement.
             var response = await _apiClient.GetPreparationsAsync(cancellationToken);
             if (!string.Equals(response.Statut, DomainLotStatuses.Success, StringComparison.OrdinalIgnoreCase))
             {
@@ -74,6 +81,7 @@ public sealed class ExpeditionController : Controller
                 return RedirectToAction(nameof(Index));
             }
 
+            // Le snapshot reçu est persisté en SQLite pour permettre la préparation locale jusqu'au verrouillage du soir.
             await _draftStore.SaveLoadedDataAsync(response, cancellationToken);
             TempData["Success"] = $"Données Expédition chargées pour le {response.DateTournee:dd/MM/yyyy}.";
             return RedirectToAction(nameof(Tournees));
@@ -92,6 +100,7 @@ public sealed class ExpeditionController : Controller
     {
         try
         {
+            // Test réseau volontairement non métier : aucun chargement ni brouillon SQLite ne doit être modifié ici.
             var ok = await _apiClient.TesterApiAsync(cancellationToken);
             TempData[ok ? "Success" : "Error"] = ok
                 ? "Mode test API : API joignable. Aucun chargement métier n'a été effectué."
@@ -109,6 +118,7 @@ public sealed class ExpeditionController : Controller
     [HttpGet("/expedition/tournees")]
     public async Task<IActionResult> Tournees(CancellationToken cancellationToken)
     {
+        // Les tournées affichées proviennent du dernier chargement local, pas d'un appel API à chaque affichage.
         var model = await _viewModelBuilder.BuildTourneesIndexAsync(cancellationToken);
         if (model is null)
         {
@@ -135,6 +145,7 @@ public sealed class ExpeditionController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Preparer(string codeTournee, PreparationInputModel input, CancellationToken cancellationToken)
     {
+        // L'enregistrement standard garde la tournée en brouillon, sauf si elle était déjà prête pour verrouillage.
         var result = await SavePreparationDraftAsync(codeTournee, input, DomainDraftStatuses.Brouillon, cancellationToken);
         if (!result.Success)
         {
@@ -183,6 +194,7 @@ public sealed class ExpeditionController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> DetailLigne(string codeTournee, string idLigneSource, PreparationLigneInputModel input, CancellationToken cancellationToken)
     {
+        // La page détail peut poster une seule ligne ; la sauvegarde commune sait fusionner ce brouillon partiel.
         input.IdLigneSource = string.IsNullOrWhiteSpace(input.IdLigneSource) ? idLigneSource : input.IdLigneSource;
         var result = await SavePreparationDraftAsync(
             codeTournee,
@@ -228,6 +240,7 @@ public sealed class ExpeditionController : Controller
             return RedirectToAction(nameof(Recapitulatif), new { codeTournee });
         }
 
+        // Le clic humain "prêt" ne verrouille pas immédiatement : il prépare le statut local consommé par le batch de 22h35.
         var input = new PreparationInputModel
         {
             Lignes = model.Lignes.Select(l => new PreparationLigneInputModel
@@ -253,6 +266,7 @@ public sealed class ExpeditionController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> VerrouillerManuellementDeveloppement(string codeTournee, CancellationToken cancellationToken)
     {
+        // Route volontairement limitée à Development : elle sert aux tests locaux sans exposer un verrouillage manuel en production.
         if (!string.Equals(_environment.EnvironmentName, "Development", StringComparison.OrdinalIgnoreCase))
         {
             return NotFound();
@@ -260,6 +274,7 @@ public sealed class ExpeditionController : Controller
 
         try
         {
+            // L'autorisation de contourner la fenêtre horaire reste pilotée par la configuration de développement.
             var result = await _verrouillageService.TryRunDetailedAsync(
                 DateTimeOffset.UtcNow,
                 $"DEV-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}",
@@ -280,6 +295,7 @@ public sealed class ExpeditionController : Controller
 
     private async Task<SavePreparationResult> SavePreparationDraftAsync(string codeTournee, PreparationInputModel input, string status, CancellationToken cancellationToken)
     {
+        // Point de passage unique pour sauvegarder les quantités Expédition, depuis la page complète ou le détail ligne.
         var load = await _draftStore.GetLastLoadedDataAsync(cancellationToken);
         var tournee = load?.Tournees.FirstOrDefault(t => string.Equals(t.CodeTournee, codeTournee, StringComparison.OrdinalIgnoreCase));
         if (load is null || tournee is null)
@@ -287,12 +303,14 @@ public sealed class ExpeditionController : Controller
             return SavePreparationResult.Fail("La tournée demandée n'existe pas dans les données chargées.");
         }
 
+        // Double protection : verrouillage connu dès le chargement API ou verrouillage local déjà enregistré en SQLite.
         var state = await _draftStore.GetTourneeStateAsync(load.DateTournee, codeTournee, cancellationToken);
         if (tournee.EstVerrouilleeBd || state?.IsLocked == true)
         {
             return SavePreparationResult.Fail("Cette tournée est verrouillée. La modification est refusée.");
         }
 
+        // Les validations métier restent centralisées dans le validator pour éviter des règles divergentes entre écrans.
         var articles = _viewModelBuilder.BuildArticlesPrepares(load.ArticlesSuivis);
         var errors = ExpeditionPreparationValidator.Validate(input, tournee, articles);
         if (errors.Count > 0)
@@ -300,6 +318,7 @@ public sealed class ExpeditionController : Controller
             return SavePreparationResult.Fail(string.Join(" ", errors));
         }
 
+        // Seuls les articles suivis par le contrat Expédition sont conservés, afin de ne pas écrire de clé parasite en SQLite.
         var allowedArticles = articles.Select(a => a.CodeArticle).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var drafts = input.Lignes.Select(l => new SavePreparationLineDraft
         {
@@ -316,6 +335,7 @@ public sealed class ExpeditionController : Controller
 
         try
         {
+            // L'adresse IP et le clic "prêt" servent à tracer l'origine et l'heure métier du verrouillage futur.
             await _draftStore.SavePreparationAsync(
                 load.DateTournee,
                 codeTournee,
@@ -335,6 +355,8 @@ public sealed class ExpeditionController : Controller
 
     private static string ResolveStatusAfterExpeditionUpdate(string requestedStatus, string? currentStatus)
     {
+        // Une modification de quantité après le clic "prêt" ne doit pas rétrograder la tournée en brouillon.
+        // La tournée reste donc éligible au verrouillage automatique de 22h35.
         if (string.Equals(requestedStatus, DomainDraftStatuses.Brouillon, StringComparison.OrdinalIgnoreCase)
             && ExpeditionRules.IsReadyForLockStatus(currentStatus))
         {
@@ -343,7 +365,6 @@ public sealed class ExpeditionController : Controller
 
         return requestedStatus;
     }
-
 
     private sealed record SavePreparationResult(bool Success, string? Message, bool StatusConservePretVerrouillage)
     {
