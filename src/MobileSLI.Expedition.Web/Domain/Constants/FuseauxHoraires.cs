@@ -7,11 +7,12 @@ namespace MobileSLI.Expedition.Web.Domain.Constants;
 
 /// <summary>
 /// Fuseaux horaires utilisés par l'application.
+/// Ces valeurs participent au calcul de l'heure métier du verrouillage, à ne pas confondre avec l'UTC technique.
 /// </summary>
 public static class FuseauxHoraires
 {
     /// <summary>
-    /// Fuseau horaire de Paris (Europe/Paris).
+    /// Fuseau horaire métier de référence pour les écrans SERVWEB et le verrouillage Expédition.
     /// </summary>
     public const string EuropeParis = "Europe/Paris";
 }
