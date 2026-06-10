@@ -1,5 +1,9 @@
 namespace MobileSLI.Expedition.Web.Models;
 
+/// <summary>
+/// Anciens statuts locaux de brouillon conservés pour compatibilité avec les parties du code qui utilisent encore ce modèle.
+/// Les constantes métier de référence sont maintenant centralisées dans le namespace Domain.Constants.
+/// </summary>
 public static class DraftStatuses
 {
     public const string Brouillon = "BROUILLON";
@@ -9,6 +13,9 @@ public static class DraftStatuses
     public const string ErreurEnvoi = "ERREUR_ENVOI";
 }
 
+/// <summary>
+/// Statuts locaux d'historique de lot utilisés pour suivre les envois de verrouillage vers l'API.
+/// </summary>
 public static class LotStatuses
 {
     public const string Cree = "CREE";
@@ -19,6 +26,9 @@ public static class LotStatuses
     public const string Conflit = "CONFLIT";
 }
 
+/// <summary>
+/// État local d'une tournée dans SQLite : brouillon, prête, verrouillée ou en erreur.
+/// </summary>
 public sealed class TourneeDraftState
 {
     public DateOnly DateTournee { get; set; }
@@ -32,6 +42,9 @@ public sealed class TourneeDraftState
     public DateTimeOffset LastModifiedUtc { get; set; }
 }
 
+/// <summary>
+/// État local d'une ligne de tournée, fusionnant quantités Expédition et commentaire Administration.
+/// </summary>
 public sealed class LineDraftState
 {
     public DateOnly DateTournee { get; set; }
@@ -53,6 +66,9 @@ public sealed class LineDraftState
     public Dictionary<string, int?> Quantites { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 }
 
+/// <summary>
+/// Lot prêt à être envoyé à l'API avec son empreinte pour gérer l'idempotence et les rejoues.
+/// </summary>
 public sealed class PreparedLockLot
 {
     public ExpeditionLockRequest Request { get; set; } = new();
@@ -60,6 +76,9 @@ public sealed class PreparedLockLot
     public string PayloadHash { get; set; } = string.Empty;
 }
 
+/// <summary>
+/// Ligne d'historique locale d'une tentative de verrouillage.
+/// </summary>
 public sealed class LockHistoryItem
 {
     public string IdLotVerrouillage { get; set; } = string.Empty;
@@ -77,6 +96,9 @@ public sealed class LockHistoryItem
     public DateTimeOffset? ProcessedUtc { get; set; }
 }
 
+/// <summary>
+/// Brouillon de quantités à sauvegarder pour une ligne Expédition.
+/// </summary>
 public sealed class SavePreparationLineDraft
 {
     public string IdLigneSource { get; set; } = string.Empty;
@@ -84,6 +106,9 @@ public sealed class SavePreparationLineDraft
     public Dictionary<string, int?> Quantites { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 }
 
+/// <summary>
+/// Brouillon de commentaire à sauvegarder pour une ligne Administration.
+/// </summary>
 public sealed class SaveAdminCommentaireDraft
 {
     public string IdLigneSource { get; set; } = string.Empty;
@@ -91,6 +116,9 @@ public sealed class SaveAdminCommentaireDraft
     public string? CommentaireExceptionnel { get; set; }
 }
 
+/// <summary>
+/// Snapshot de supervision affichant l'état du chargement, des brouillons et du verrouillage planifié.
+/// </summary>
 public sealed class PreparationStatusSnapshot
 {
     public DateOnly? DateTournee { get; set; }
@@ -120,6 +148,9 @@ public sealed class PreparationStatusSnapshot
     public bool VerrouillageEnRetard { get; set; }
 }
 
+/// <summary>
+/// Dernier signal écrit par le script ou la tâche Windows de verrouillage.
+/// </summary>
 public sealed class LockTaskHeartbeat
 {
     public DateTimeOffset? Date { get; set; }
