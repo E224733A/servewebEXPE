@@ -61,6 +61,7 @@ public sealed class VerrouillageBackgroundService : BackgroundService
 
     private async Task CheckAndRunAsync(CancellationToken cancellationToken)
     {
+        // Le service peut vérifier souvent ; VerrouillageService refuse lui-même les appels hors fenêtre métier.
         using var scope = _scopeFactory.CreateScope();
         var service = scope.ServiceProvider.GetRequiredService<VerrouillageService>();
         await service.TryRunAsync(DateTimeOffset.UtcNow, _options.LotSequence, cancellationToken);
