@@ -23,6 +23,8 @@ public sealed class VerrouillageService
 {
     private static readonly SemaphoreSlim ProcessLock = new(1, 1);
 
+    // Les réponses d'idempotence API sont traitées comme des succès fonctionnels :
+    // une relance identique ne doit pas laisser la tournée modifiable côté SERVWEB.
     private static readonly HashSet<string> SuccessStatuses = new(StringComparer.OrdinalIgnoreCase)
     {
         "SUCCESS",
