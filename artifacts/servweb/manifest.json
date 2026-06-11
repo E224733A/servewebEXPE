@@ -1,12 +1,12 @@
 ﻿{
     "project":  "MobileSLI.Expedition.Web",
     "artifact":  "artifacts/servweb/MobileSLI.Expedition.Web.zip",
-    "sourceCommit":  "c434f744922c6acb16e7f6c858b8273ed26825dd",
-    "sourceCommitShort":  "c434f74",
+    "sourceCommit":  "1b0a32edbcb98a2f3302d438b06529f7e09982a0",
+    "sourceCommitShort":  "1b0a32e",
     "branch":  "main",
     "configuration":  "Release",
-    "createdAt":  "2026-06-09 09:31:56 +02:00",
-    "createdOn":  "PCSODILECMDR",
+    "createdAt":  "2026-06-11 15:06:03 +02:00",
+    "createdOn":  "SLI-INF-543",
     "deployTarget":  "SERVWEB IIS",
     "serverBuild":  false,
     "note":  "Artefact publie localement. SERVWEB ne compile pas."
