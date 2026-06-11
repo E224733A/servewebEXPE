@@ -20,6 +20,7 @@ public interface IExpeditionDraftStore
 
     /// <summary>
     /// Sauvegarde le dernier lot API chargé pour servir de référentiel aux écrans Expédition et Administration.
+    /// Un nouveau chargement ne doit pas écraser les états locaux déjà saisis ou prêts pour verrouillage.
     /// </summary>
     Task SaveLoadedDataAsync(ExpeditionLoadResponse response, CancellationToken cancellationToken);
 
@@ -40,6 +41,7 @@ public interface IExpeditionDraftStore
 
     /// <summary>
     /// Retourne les brouillons locaux de lignes d'une tournée, en fusionnant quantités Expédition et commentaires Administration.
+    /// Cette fusion évite de mélanger les rôles de saisie tout en présentant une ligne cohérente aux écrans.
     /// </summary>
     Task<IReadOnlyDictionary<string, LineDraftState>> GetLineStatesAsync(DateOnly dateTournee, string codeTournee, CancellationToken cancellationToken);
 
@@ -62,6 +64,7 @@ public interface IExpeditionDraftStore
 
     /// <summary>
     /// Construit le lot JSON prêt à être envoyé à l'API centrale lors du verrouillage automatique.
+    /// Si aucune trace locale du clic prêt n'est disponible, l'implémentation doit produire une date de modification valide pour le contrat API.
     /// </summary>
     Task<PreparedLockLot?> BuildLockLotAsync(DateTimeOffset requestedAtLocal, string lotSequence, CancellationToken cancellationToken);
 
