@@ -25,6 +25,8 @@ public sealed class VerrouillageService
 
     // Les réponses d'idempotence API sont traitées comme des succès fonctionnels :
     // une relance identique ne doit pas laisser la tournée modifiable côté SERVWEB.
+    // L'API actuelle renvoie Statut=SUCCESS et Code=ALREADY_PROCESSED pour une relance identique.
+    // Les codes d'idempotence sont donc des succès fonctionnels, même si le statut principal reste SUCCESS.
     private static readonly HashSet<string> SuccessStatuses = new(StringComparer.OrdinalIgnoreCase)
     {
         "SUCCESS",
